@@ -15,3 +15,7 @@ music of modern video games in HD (FLAC)
 Youtube use an Invidious public instance, change istance if it's not available.
 (Some Invidious instances doesn't accept CORS so there's a redirect script)
 You need a Yotube capable player for Youtube playlist (ie. AIMP + Youtube plugin, PotPlayer)
+
+## How to use
+
+Go to a supported music website and navigate to an album or playlist page. Open DevTools, paste the appropriate script, and the browser will download the .xspf file. You can then open it with your favorite player.
