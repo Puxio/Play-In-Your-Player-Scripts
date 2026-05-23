@@ -1,7 +1,7 @@
 /**
  * Squidify.org XSPF Auto-Collector
- * * @version  1.0.0
- * @description Automatically iterates through [role=table] rows, waits for audio 
+ * * @version  1.1.0
+ * @description Automatically iterates through [role=table] rows, waits for audio
  * metadata, and exports an XSPF playlist with accurate durations.
  */
 
@@ -10,23 +10,23 @@
 
     // --- State Storage ---
     window.capturedTracks = [];
-    
+
     const h1Element = document.querySelector('h1');
     const playlistTitle = h1Element ? h1Element.innerText.trim() : "Squidify Playlist";
 
     console.clear();
-    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.0.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
+    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.1.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
 
     // --- UI Status Overlay ---
     const statusOverlay = document.createElement('div');
     Object.assign(statusOverlay.style, {
         position: 'fixed', top: '20px', right: '20px', zIndex: '9999999',
         padding: '15px', backgroundColor: 'rgba(15, 15, 15, 0.95)', color: '#00E676',
-        borderRadius: '8px', fontFamily: 'monospace', border: '1px solid #00E676', 
+        borderRadius: '8px', fontFamily: 'monospace', border: '1px solid #00E676',
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '180px'
     });
     statusOverlay.innerHTML = `
-        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.0.0</div>
+        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.1.0</div>
         <div id="sq-status">READY</div>
         <div id="sq-count" style="font-size: 24px; margin: 8px 0;">0</div>
         <div id="sq-progress" style="font-size: 10px; opacity: 0.7;">Waiting for trigger...</div>
@@ -40,52 +40,98 @@
     };
 
     /**
-     * Promise-based wait for audio metadata with safety checks
+     * Promise-based wait for audio metadata with safety checks.
+     * Handles loadedmetadata, error, and fallback timeout.
      */
     const waitForMetadata = () => {
         return new Promise((resolve) => {
             const audio = document.querySelector('audio');
-            
+
             if (!audio) {
                 console.warn("Audio element missing, retrying in 1s...");
                 setTimeout(resolve, 1000);
                 return;
             }
 
-            const onLoaded = () => {
+            let settled = false;
+
+            const cleanup = () => {
+                if (settled) return;
+                settled = true;
                 audio.removeEventListener('loadedmetadata', onLoaded);
+                audio.removeEventListener('error', onError);
+                clearTimeout(fallbackTimer);
+            };
+
+            const onLoaded = () => {
+                cleanup();
                 // Stabilization delay to avoid AbortError on next click
                 setTimeout(resolve, 1000);
             };
 
+            // Resolve quickly on audio error so we don't wait the full 12s
+            const onError = () => {
+                console.warn("Audio load error on this track, skipping...");
+                cleanup();
+                setTimeout(resolve, 500);
+            };
+
             audio.addEventListener('loadedmetadata', onLoaded);
-            
-            // Timeout: move to next track if metadata doesn't load in 12s
-            setTimeout(() => {
-                audio.removeEventListener('loadedmetadata', onLoaded);
+            audio.addEventListener('error', onError);
+
+            // Absolute fallback: move to next track if nothing fires within 12s
+            const fallbackTimer = setTimeout(() => {
+                cleanup();
                 resolve();
             }, 12000);
         });
     };
 
     /**
+     * Returns the live row list from the table.
+     * Called inside the loop to avoid stale references after SPA re-renders.
+     */
+    const getLiveRows = () => {
+        const table = document.querySelectorAll('[role=table]')[0];
+        return Array.from(table?.querySelectorAll('[role=row]') || []);
+    };
+
+    /**
      * Main Scraper Engine
      */
     const run = async () => {
-        const table = document.querySelectorAll('[role=table]')[0];
-        const rows = Array.from(table?.querySelectorAll('[role=row]') || []);
-        
-        if (rows.length === 0) {
+        // Snapshot total count from initial render
+        const totalRows = getLiveRows().length;
+
+        if (totalRows === 0) {
             updateUI("ERROR", 0, "No table rows found.");
             return;
         }
 
-        for (let i = 1; i < rows.length; i++) {
-            const btn = rows[i].querySelector('button');
+        for (let i = 1; i < totalRows; i++) {
+            updateUI("PROCESSING", window.capturedTracks.length, `Row ${i} / ${totalRows - 1}`);
+
+            // Re-query the live DOM on every iteration.
+            // Squidify's React layer can unmount/remount rows during scroll
+            // (virtual scroll), making a pre-captured array stale from row ~23 on.
+            const liveRows = getLiveRows();
+            const row = liveRows[i];
+
+            if (!row) {
+                console.warn(`Row ${i} not found in live DOM, skipping.`);
+                continue;
+            }
+
+            row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+            // Let the scroll animation settle and React re-render before clicking
+            await new Promise(r => setTimeout(r, 400));
+
+            // Re-query after scroll in case the row node was replaced by re-render
+            const freshRow = getLiveRows()[i];
+            const btn = freshRow?.querySelector('button');
+
             if (btn) {
-                updateUI("PROCESSING", window.capturedTracks.length, `Row ${i} / ${rows.length - 1}`);
-                rows[i].scrollIntoView({ block: 'center', behavior: 'smooth' });
-                
                 btn.click();
                 await waitForMetadata();
 
@@ -95,7 +141,7 @@
 
                 if (src && src.includes('stream')) {
                     const info = img?.alt.split(' - ') || ["Unknown", "Unknown"];
-                    
+
                     // Duplicate prevention
                     if (!window.capturedTracks.find(t => t.location === src)) {
                         window.capturedTracks.push({
@@ -104,7 +150,7 @@
                             creator: (info[0] || "Unknown Artist").trim(),
                             duration: audio && !isNaN(audio.duration) ? Math.round(audio.duration * 1000) : 0
                         });
-                        console.log(`%c 📥 Captured [v1.0.0]: ${info[1] || info[0]}`, "color: #00E676;");
+                        console.log(`%c 📥 Captured [v1.1.0]: ${info[1] || info[0]}`, "color: #00E676;");
                     }
                 }
             }
@@ -118,14 +164,14 @@
     const finish = () => {
         // Skip the first track as per user workflow
         const final = window.capturedTracks.slice(1);
-        
+
         if (final.length === 0) {
             updateUI("EMPTY", 0, "No tracks to export.");
             return;
         }
 
         const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        
+
         let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n<title>${esc(playlistTitle)}</title>\n<trackList>`;
         final.forEach(t => {
             xml += `\n<track><location>${esc(t.location)}</location><title>${esc(t.title)}</title><creator>${esc(t.creator)}</creator><duration>${t.duration}</duration></track>`;
@@ -135,11 +181,11 @@
         const blob = new Blob([xml], { type: 'application/xspf+xml' });
         const a = document.createElement('a');
         const safeName = playlistTitle.replace(/[\\/:*?"<>|]/g, '_');
-        
+
         a.href = URL.createObjectURL(blob);
         a.download = `${safeName} [Squidify.org].xspf`;
         a.click();
-        
+
         updateUI("COMPLETED", final.length, "File downloaded.");
         setTimeout(() => statusOverlay.remove(), 5000);
     };
