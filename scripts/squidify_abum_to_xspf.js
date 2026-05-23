@@ -100,28 +100,44 @@
      * Main Scraper Engine
      */
     const run = async () => {
-        if (getLiveRows().length === 0) {
+        const initialCount = getLiveRows().length;
+        console.log(`[Squidify] Initial row count (incl. header): ${initialCount}`);
+
+        if (initialCount === 0) {
             updateUI("ERROR", 0, "No table rows found.");
             return;
         }
 
-        // Use a while loop with a dynamic row count instead of a fixed for loop.
-        // Squidify lazy-loads rows as the user scrolls, so the initial DOM may
-        // contain only ~24 of 28 tracks. When we reach the current last row we
-        // scroll further to trigger the SPA to append the remaining rows.
         let i = 1;
         while (true) {
             const liveRows = getLiveRows();
 
             if (i >= liveRows.length) {
-                // Reached the end of currently rendered rows — scroll to trigger
-                // lazy loading of any remaining rows.
-                updateUI("SCANNING", window.capturedTracks.length, "Loading more tracks...");
-                const lastRow = liveRows[liveRows.length - 1];
-                if (lastRow) lastRow.scrollIntoView({ block: 'end', behavior: 'smooth' });
-                await new Promise(r => setTimeout(r, 1000));
+                // Reached the end of currently rendered rows.
+                // Retry up to 5 times with window + scrollIntoView scrolling to
+                // trigger any lazy loading the SPA might have pending.
+                let loaded = false;
+                for (let attempt = 1; attempt <= 5; attempt++) {
+                    updateUI("SCANNING", window.capturedTracks.length, `Loading tracks... (${attempt}/5)`);
+                    console.log(`[Squidify] Scanning attempt ${attempt}/5 — rows in DOM: ${getLiveRows().length}`);
 
-                if (getLiveRows().length <= liveRows.length) break; // No new rows appeared
+                    const rows = getLiveRows();
+                    rows[rows.length - 1]?.scrollIntoView({ block: 'end' });
+                    window.scrollTo(0, document.body.scrollHeight);
+
+                    await new Promise(r => setTimeout(r, 2000));
+
+                    if (getLiveRows().length > liveRows.length) {
+                        console.log(`[Squidify] New rows appeared → now ${getLiveRows().length}`);
+                        loaded = true;
+                        break;
+                    }
+                }
+
+                if (!loaded) {
+                    console.log(`[Squidify] Done. Final row count: ${getLiveRows().length}`);
+                    break;
+                }
                 continue;
             }
 
