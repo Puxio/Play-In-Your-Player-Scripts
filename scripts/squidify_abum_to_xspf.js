@@ -1,6 +1,6 @@
 /**
  * Squidify.org XSPF Auto-Collector
- * * @version  1.2.0
+ * * @version  1.3.0
  * @description Automatically iterates through [role=table] rows, waits for audio
  * metadata, and exports an XSPF playlist with accurate durations.
  */
@@ -15,7 +15,7 @@
     const playlistTitle = h1Element ? h1Element.innerText.trim() : "Squidify Playlist";
 
     console.clear();
-    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.2.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
+    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.3.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
 
     // --- UI Status Overlay ---
     const statusOverlay = document.createElement('div');
@@ -26,7 +26,7 @@
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '180px'
     });
     statusOverlay.innerHTML = `
-        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.2.0</div>
+        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.3.0</div>
         <div id="sq-status">READY</div>
         <div id="sq-count" style="font-size: 24px; margin: 8px 0;">0</div>
         <div id="sq-progress" style="font-size: 10px; opacity: 0.7;">Waiting for trigger...</div>
@@ -88,98 +88,90 @@
     };
 
     /**
-     * Returns the live row list from the table.
-     * Called inside the loop to avoid stale references after SPA re-renders.
+     * Returns the first track row whose play button has not yet been clicked.
+     * Skips row[0] (header) and any button already marked data-sq-done.
+     *
+     * Squidify uses virtual scroll: only ~17 rows are in the DOM at a time and
+     * their DOM indices shift as the user scrolls. Index-based iteration breaks
+     * because i=25 may exceed the current DOM length of 17. Instead we mark each
+     * button immediately before clicking (data-sq-done) and always pick the first
+     * unmarked one. React may unmount and remount rows as they leave/enter the
+     * viewport, losing the marker — the URL duplicate check in capturedTracks
+     * handles those re-clicks without adding duplicates.
      */
-    const getLiveRows = () => {
+    const getNextRow = () => {
         const table = document.querySelectorAll('[role=table]')[0];
-        return Array.from(table?.querySelectorAll('[role=row]') || []);
+        if (!table) return null;
+        const rows = table.querySelectorAll('[role=row]');
+        for (let j = 1; j < rows.length; j++) {
+            const btn = rows[j].querySelector('button');
+            if (btn && !btn.dataset.sqDone) return rows[j];
+        }
+        return null;
     };
 
     /**
      * Main Scraper Engine
      */
     const run = async () => {
-        const initialCount = getLiveRows().length;
-        console.log(`[Squidify] Initial row count (incl. header): ${initialCount}`);
-
-        if (initialCount === 0) {
+        if (!getNextRow()) {
             updateUI("ERROR", 0, "No table rows found.");
             return;
         }
 
-        let i = 1;
-        while (true) {
-            const liveRows = getLiveRows();
+        // emptyScrolls counts consecutive iterations where no unprocessed row
+        // was visible. After 5 such scrolls (10 s) with no new rows appearing,
+        // we consider the list exhausted.
+        let emptyScrolls = 0;
 
-            if (i >= liveRows.length) {
-                // Reached the end of currently rendered rows.
-                // Retry up to 5 times with window + scrollIntoView scrolling to
-                // trigger any lazy loading the SPA might have pending.
-                let loaded = false;
-                for (let attempt = 1; attempt <= 5; attempt++) {
-                    updateUI("SCANNING", window.capturedTracks.length, `Loading tracks... (${attempt}/5)`);
-                    console.log(`[Squidify] Scanning attempt ${attempt}/5 — rows in DOM: ${getLiveRows().length}`);
+        while (emptyScrolls < 5) {
+            const row = getNextRow();
 
-                    const rows = getLiveRows();
-                    rows[rows.length - 1]?.scrollIntoView({ block: 'end' });
-                    window.scrollTo(0, document.body.scrollHeight);
-
-                    await new Promise(r => setTimeout(r, 2000));
-
-                    if (getLiveRows().length > liveRows.length) {
-                        console.log(`[Squidify] New rows appeared → now ${getLiveRows().length}`);
-                        loaded = true;
-                        break;
-                    }
-                }
-
-                if (!loaded) {
-                    console.log(`[Squidify] Done. Final row count: ${getLiveRows().length}`);
-                    break;
-                }
+            if (!row) {
+                emptyScrolls++;
+                updateUI("SCANNING", window.capturedTracks.length, `Checking for more... (${emptyScrolls}/5)`);
+                console.log(`[Squidify] No unprocessed rows visible — scroll attempt ${emptyScrolls}/5`);
+                window.scrollTo(0, document.body.scrollHeight);
+                await new Promise(r => setTimeout(r, 2000));
                 continue;
             }
 
-            const row = liveRows[i];
-            if (!row) { i++; continue; }
+            // New row found — reset the empty-scroll counter
+            emptyScrolls = 0;
 
-            updateUI("PROCESSING", window.capturedTracks.length, `Row ${i} / ${liveRows.length - 1}`);
+            const btn = row.querySelector('button');
+            // Mark before clicking so re-entrant calls don't pick this row again
+            btn.dataset.sqDone = 'true';
+
+            updateUI("PROCESSING", window.capturedTracks.length, `Captured: ${window.capturedTracks.length}`);
             row.scrollIntoView({ block: 'center', behavior: 'smooth' });
 
             // Let scroll settle and React re-render before clicking
             await new Promise(r => setTimeout(r, 400));
 
-            // Re-query after scroll in case the row node was replaced by re-render
-            const freshRow = getLiveRows()[i];
-            const btn = freshRow?.querySelector('button');
+            btn.click();
+            await waitForMetadata();
 
-            if (btn) {
-                btn.click();
-                await waitForMetadata();
+            const audio = document.querySelector('audio');
+            const img = document.getElementById('track-song-image');
+            const src = audio?.currentSrc || audio?.src;
 
-                const audio = document.querySelector('audio');
-                const img = document.getElementById('track-song-image');
-                const src = audio?.currentSrc || audio?.src;
+            if (src && src.includes('stream')) {
+                const info = img?.alt.split(' - ') || ["Unknown", "Unknown"];
 
-                if (src && src.includes('stream')) {
-                    const info = img?.alt.split(' - ') || ["Unknown", "Unknown"];
-
-                    // Duplicate prevention
-                    if (!window.capturedTracks.find(t => t.location === src)) {
-                        window.capturedTracks.push({
-                            location: src,
-                            title: (info[1] || info[0]).trim(),
-                            creator: (info[0] || "Unknown Artist").trim(),
-                            duration: audio && !isNaN(audio.duration) ? Math.round(audio.duration * 1000) : 0
-                        });
-                        console.log(`%c 📥 Captured [v1.2.0]: ${info[1] || info[0]}`, "color: #00E676;");
-                    }
+                if (!window.capturedTracks.find(t => t.location === src)) {
+                    window.capturedTracks.push({
+                        location: src,
+                        title: (info[1] || info[0]).trim(),
+                        creator: (info[0] || "Unknown Artist").trim(),
+                        duration: audio && !isNaN(audio.duration) ? Math.round(audio.duration * 1000) : 0
+                    });
+                    console.log(`%c 📥 Captured [v1.3.0]: ${info[1] || info[0]}`, "color: #00E676;");
                 }
             }
-
-            i++;
         }
+
+        console.log(`[Squidify] Done. Total captured: ${window.capturedTracks.length}`);
         finish();
     };
 
