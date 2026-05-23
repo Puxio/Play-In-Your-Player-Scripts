@@ -1,6 +1,6 @@
 /**
  * Squidify.org XSPF Auto-Collector
- * * @version  1.1.0
+ * * @version  1.2.0
  * @description Automatically iterates through [role=table] rows, waits for audio
  * metadata, and exports an XSPF playlist with accurate durations.
  */
@@ -15,7 +15,7 @@
     const playlistTitle = h1Element ? h1Element.innerText.trim() : "Squidify Playlist";
 
     console.clear();
-    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.1.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
+    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.2.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
 
     // --- UI Status Overlay ---
     const statusOverlay = document.createElement('div');
@@ -26,7 +26,7 @@
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '180px'
     });
     statusOverlay.innerHTML = `
-        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.1.0</div>
+        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.2.0</div>
         <div id="sq-status">READY</div>
         <div id="sq-count" style="font-size: 24px; margin: 8px 0;">0</div>
         <div id="sq-progress" style="font-size: 10px; opacity: 0.7;">Waiting for trigger...</div>
@@ -157,7 +157,7 @@
                             creator: (info[0] || "Unknown Artist").trim(),
                             duration: audio && !isNaN(audio.duration) ? Math.round(audio.duration * 1000) : 0
                         });
-                        console.log(`%c 📥 Captured [v1.1.0]: ${info[1] || info[0]}`, "color: #00E676;");
+                        console.log(`%c 📥 Captured [v1.2.0]: ${info[1] || info[0]}`, "color: #00E676;");
                     }
                 }
             }
