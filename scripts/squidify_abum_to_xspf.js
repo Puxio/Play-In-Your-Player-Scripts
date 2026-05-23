@@ -100,31 +100,38 @@
      * Main Scraper Engine
      */
     const run = async () => {
-        // Snapshot total count from initial render
-        const totalRows = getLiveRows().length;
-
-        if (totalRows === 0) {
+        if (getLiveRows().length === 0) {
             updateUI("ERROR", 0, "No table rows found.");
             return;
         }
 
-        for (let i = 1; i < totalRows; i++) {
-            updateUI("PROCESSING", window.capturedTracks.length, `Row ${i} / ${totalRows - 1}`);
-
-            // Re-query the live DOM on every iteration.
-            // Squidify's React layer can unmount/remount rows during scroll
-            // (virtual scroll), making a pre-captured array stale from row ~23 on.
+        // Use a while loop with a dynamic row count instead of a fixed for loop.
+        // Squidify lazy-loads rows as the user scrolls, so the initial DOM may
+        // contain only ~24 of 28 tracks. When we reach the current last row we
+        // scroll further to trigger the SPA to append the remaining rows.
+        let i = 1;
+        while (true) {
             const liveRows = getLiveRows();
-            const row = liveRows[i];
 
-            if (!row) {
-                console.warn(`Row ${i} not found in live DOM, skipping.`);
+            if (i >= liveRows.length) {
+                // Reached the end of currently rendered rows — scroll to trigger
+                // lazy loading of any remaining rows.
+                updateUI("SCANNING", window.capturedTracks.length, "Loading more tracks...");
+                const lastRow = liveRows[liveRows.length - 1];
+                if (lastRow) lastRow.scrollIntoView({ block: 'end', behavior: 'smooth' });
+                await new Promise(r => setTimeout(r, 1000));
+
+                if (getLiveRows().length <= liveRows.length) break; // No new rows appeared
                 continue;
             }
 
+            const row = liveRows[i];
+            if (!row) { i++; continue; }
+
+            updateUI("PROCESSING", window.capturedTracks.length, `Row ${i} / ${liveRows.length - 1}`);
             row.scrollIntoView({ block: 'center', behavior: 'smooth' });
 
-            // Let the scroll animation settle and React re-render before clicking
+            // Let scroll settle and React re-render before clicking
             await new Promise(r => setTimeout(r, 400));
 
             // Re-query after scroll in case the row node was replaced by re-render
@@ -154,6 +161,8 @@
                     }
                 }
             }
+
+            i++;
         }
         finish();
     };
