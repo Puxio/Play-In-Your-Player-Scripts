@@ -1,5 +1,5 @@
 /**
- * XSPF Playlist Generator for Musify.club - v1.1.1
+ * XSPF Playlist Generator for Musify.club - v1.1.2
  *
  * This script is designed to run in the DevTools console of an Album/Playlist
  * page on musify.club. It extracts track details, fetches the real MP3 URL
@@ -16,6 +16,8 @@
  *    so the resulting XSPF is time-limited (typically valid for several days).
  *
  * Changelog:
+ *   1.1.2 (2026-06-14) - Add .tracklist__meta2 span:first-child as primary
+ *                        duration selector for the 2026 layout.
  *   1.1.1 (2026-06-14) - Strip query parameters (expires, sig) from stream URLs
  *                        in the XSPF <location> field.
  *   1.1.0 (2026-05-08) - Adapted to the new musify.club layout: now reads
@@ -38,6 +40,7 @@
     // Duration: on the new layout the duration is inside the row, typically as "MM:SS 320 Кб/с".
     // Fallback selectors cover both old and new markup.
     const DURATION_FALLBACK_SELECTORS = [
+        '.tracklist__meta2 span:first-child',
         'div.track__details:not(.track__rating) span.text-muted',
         '.tracklist__time',
         '.playlist__time',
