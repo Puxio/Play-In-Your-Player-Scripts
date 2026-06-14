@@ -1,5 +1,5 @@
 /**
- * XSPF Playlist Generator for Musify.club - v1.1.0
+ * XSPF Playlist Generator for Musify.club - v1.1.1
  *
  * This script is designed to run in the DevTools console of an Album/Playlist
  * page on musify.club. It extracts track details, fetches the real MP3 URL
@@ -16,6 +16,8 @@
  *    so the resulting XSPF is time-limited (typically valid for several days).
  *
  * Changelog:
+ *   1.1.1 (2026-06-14) - Strip query parameters (expires, sig) from stream URLs
+ *                        in the XSPF <location> field.
  *   1.1.0 (2026-05-08) - Adapted to the new musify.club layout: now reads
  *                        data-track-id from each .playlist__item row and
  *                        fetches signed MP3 URLs from /api/track/{id}/stream-url.
@@ -227,7 +229,7 @@
 
         // Construct XSPF <track> Entry
         let trackXml = '    <track>\n';
-        trackXml +=     `      <location>${escapeXml(url)}</location>\n`;
+        trackXml +=     `      <location>${escapeXml(url.split('?')[0])}</location>\n`;
         if (durationInSeconds !== -1) { trackXml += `      <duration>${durationInSeconds * 1000}</duration>\n`; }
         if (trackArtist !== 'Unknown Artist') { trackXml += `      <creator>${escapeXml(trackArtist)}</creator>\n`; }
         if (trackTitle !== 'Unknown Track') { trackXml += `      <title>${escapeXml(trackTitle)}</title>\n`; }
