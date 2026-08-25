@@ -5,7 +5,7 @@ Scripts for DevTools to export Musify.club | KHinsider | Squidify | and Youtube.
 [Musify.club](https://musify.club/en):
 big catalogue and high quality music (320 kbps mp3)
 
-[KHisider](https://downloads.khinsider.com/):
+[KHinsider](https://downloads.khinsider.com/):
 video games music, gamerips and more
 
 [Squidify.org](https://www.squidify.org/):
