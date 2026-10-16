@@ -58,7 +58,7 @@ Go to a supported music website and navigate to an album or playlist page. Open 
 ## Notes
 
 - **Musify links expire.** Musify signs its stream URLs, and the signature only lasts a few hours. Play the .xspf soon after creating it, and create it again (one click on the bookmark) when it stops working.
-- **YouTube** playlists are read directly from youtube.com, so no Invidious instance and no redirect are needed (the script also works on the Invidious instances listed in `scripts/manifest.json`). You need a YouTube capable player for YouTube playlists (for example AIMP with the YouTube plugin, or PotPlayer). `redirect-youtube.js` is no longer used and is kept only for reference.
+- **YouTube** playlists are read directly from youtube.com. You need a YouTube capable player to play them (for example AIMP with the YouTube plugin, or PotPlayer).
 
 ## Adding a new site
 
