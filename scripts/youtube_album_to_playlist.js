@@ -1,5 +1,5 @@
 /**
- * YouTube Playlist / Album to XSPF - v2.0.0
+ * YouTube Playlist / Album to XSPF - v2.1.0
  *
  * Run in the DevTools console (or with the bookmarklet) on a YouTube
  * playlist or album: https://www.youtube.com/playlist?list=... or a watch
@@ -20,6 +20,11 @@
  * "Artist - Album [Youtube].xspf", other playlists as "Title [Youtube].xspf".
  *
  * Changelog:
+ *   2.1.0 (2026-10-16) - Support the current playlist page layout, where each
+ *                        video is a lockupViewModel instead of a
+ *                        playlistVideoRenderer (2.0.0 found no videos). Album
+ *                        artist taken from the header subtitle
+ *                        ("Artist • Album") when present.
  *   2.0.0 (2026-10-16) - Read playlists from youtube.com directly instead of
  *                        a public Invidious instance (the redirect to
  *                        yewtu.be stopped at a browser verification).
@@ -55,6 +60,7 @@
     }
 
     let playlistTitle = '';
+    let headerArtist = '';
     let videos = []; // { videoId, title, author, position, seconds }
 
     if (onYouTube) {
@@ -75,11 +81,45 @@
             return null;
         };
 
-        // Collect playlist video renderers and continuation tokens, in page order.
+        // Older layout: one playlistVideoRenderer per video.
+        const fromRenderer = (r) => ({
+            videoId: r.videoId,
+            title: text(r.title),
+            author: text(r.shortBylineText),
+            index: parseInt(text(r.index), 10) || null,
+            seconds: parseInt(r.lengthSeconds, 10) || parseLength(text(r.lengthText)),
+            playable: r.isPlayable !== false
+        });
+
+        // Current layout (2026): one lockupViewModel per video. Title in
+        // metadata.title.content, channel in the first metadata row, duration
+        // as a thumbnail badge ("4:32"), position in the watchEndpoint index.
+        const fromLockup = (l) => {
+            const meta = (l.metadata && l.metadata.lockupMetadataViewModel) || {};
+            const rows = ((meta.metadata || {}).contentMetadataViewModel || {}).metadataRows || [];
+            const firstPart = rows[0] && rows[0].metadataParts && rows[0].metadataParts[0];
+            const watch = find(l.rendererContext || {}, 'watchEndpoint') || {};
+            const badge = JSON.stringify(l.contentImage || {}).match(/"text":"(\d{1,2}(?::\d{2}){1,2})"/);
+            return {
+                videoId: l.contentId || watch.videoId,
+                title: (meta.title && meta.title.content) || '',
+                author: (firstPart && firstPart.text && firstPart.text.content) || '',
+                index: typeof watch.index === 'number' ? watch.index + 1 : null,
+                seconds: badge ? parseLength(badge[1]) : 0,
+                playable: true
+            };
+        };
+
+        // Collect videos and continuation tokens, in page order.
         const collect = (node, out) => {
             if (!node || typeof node !== 'object') return;
             if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return; }
-            if (node.playlistVideoRenderer) { out.items.push(node.playlistVideoRenderer); return; }
+            if (node.playlistVideoRenderer) { out.items.push(fromRenderer(node.playlistVideoRenderer)); return; }
+            if (node.lockupViewModel) {
+                const l = node.lockupViewModel;
+                if (!l.contentType || l.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO') out.items.push(fromLockup(l));
+                return;
+            }
             if (node.continuationItemRenderer) {
                 const m = JSON.stringify(node.continuationItemRenderer).match(/"token":"([^"]+)"/);
                 if (m) out.tokens.push(m[1]);
@@ -107,14 +147,22 @@
 
         const metadata = find(data, 'playlistMetadataRenderer');
         const pageHeader = find(data, 'pageHeaderRenderer');
-        const oldHeader = find(data, 'playlistHeaderRenderer');
+        const playlistHeader = find(data.header || {}, 'playlistHeaderRenderer');
         playlistTitle = (metadata && metadata.title)
             || (pageHeader && pageHeader.pageTitle)
-            || (oldHeader && text(oldHeader.title))
+            || (playlistHeader && text(playlistHeader.title))
             || document.title.replace(/\s*-\s*YouTube\s*$/, '');
 
+        // Album header subtitle: "Generation Steel • Album".
+        if (playlistHeader && playlistHeader.subtitle) {
+            headerArtist = text(playlistHeader.subtitle).split(/\s+•\s+/)[0].trim();
+        }
+
+        // The video list: playlistVideoListRenderer (older layout) or the
+        // sectionListRenderer of the browse tab (current layout).
+        const contents = data.contents || data;
         const out = { items: [], tokens: [] };
-        collect(find(data, 'playlistVideoListRenderer') || data, out);
+        collect(find(contents, 'playlistVideoListRenderer') || find(contents, 'sectionListRenderer') || contents, out);
 
         // Playlists longer than 100 videos: ask for the next pages like the site does.
         const context = window.ytcfg && window.ytcfg.get ? window.ytcfg.get('INNERTUBE_CONTEXT') : null;
@@ -141,14 +189,14 @@
         }
 
         let skipped = 0;
-        for (const r of out.items) {
-            if (!r.videoId || r.isPlayable === false) { skipped++; continue; }
+        for (const item of out.items) {
+            if (!item.videoId || !item.playable) { skipped++; continue; }
             videos.push({
-                videoId: r.videoId,
-                title: text(r.title),
-                author: text(r.shortBylineText),
-                position: parseInt(text(r.index), 10) || videos.length + skipped + 1,
-                seconds: parseInt(r.lengthSeconds, 10) || parseLength(text(r.lengthText))
+                videoId: item.videoId,
+                title: item.title,
+                author: item.author,
+                position: item.index || videos.length + skipped + 1,
+                seconds: item.seconds
             });
         }
         if (skipped) console.log(`${TAG} Skipped ${skipped} unplayable video(s) (deleted or private).`);
@@ -180,7 +228,7 @@
     // --- Album or plain playlist ---
     const isAlbum = playlistId.startsWith('OLAK');
     const stripTopic = (name) => (name || '').replace(/\s*-\s*Topic$/, '').trim();
-    const albumArtist = isAlbum ? (stripTopic(videos[0].author) || 'Unknown Artist') : '';
+    const albumArtist = isAlbum ? (headerArtist || stripTopic(videos[0].author) || 'Unknown Artist') : '';
 
     const trackXml = videos.map((video) => {
         let title = video.title || 'Unknown Title';
