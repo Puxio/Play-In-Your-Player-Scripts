@@ -2,7 +2,7 @@
   "musify.club": "musify_album_to_xspf.js",
   "khinsider.com": "khinsider_album_to_xspf.js",
   "squidify.org": "squidify_abum_to_xspf.js",
-  "youtube.com": "redirect-youtube.js",
+  "youtube.com": "youtube_album_to_playlist.js",
   "yewtu.be": "youtube_album_to_playlist.js",
   "inv.nadeko.net": "youtube_album_to_playlist.js"
 }

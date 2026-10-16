@@ -11,7 +11,7 @@ Use them with one bookmarklet that recognises the site you are on, or paste them
 | [Musify.club](https://musify.club/en) | Big catalogue, high quality music (320 kbps MP3) | `musify_album_to_xspf.js` |
 | [KHinsider](https://downloads.khinsider.com/) | Video game music, gamerips and more | `khinsider_album_to_xspf.js` |
 | [Squidify.org](https://www.squidify.org/) | Music of modern video games in HD (FLAC) | `squidify_abum_to_xspf.js` |
-| [YouTube](https://youtube.com/) | Albums and playlists, through an Invidious instance | `redirect-youtube.js` + `youtube_album_to_playlist.js` |
+| [YouTube](https://youtube.com/) | Albums and playlists, read directly from YouTube | `youtube_album_to_playlist.js` |
 
 ## Quick start: the bookmarklet
 
@@ -25,18 +25,18 @@ One bookmark works on every supported site and always runs the latest version of
 4. Paste this as the URL and save:
 
 ```
-javascript:!function(){var t="Puxio/Play-In-Your-Player-Scripts",e="https://raw.githubusercontent.com/"+t+"/main/scripts/",n="https://cdn.jsdelivr.net/gh/"+t+"@main/scripts/",o={"musify.club":"musify_album_to_xspf.js","khinsider.com":"khinsider_album_to_xspf.js","squidify.org":"squidify_abum_to_xspf.js","youtube.com":"redirect-youtube.js","yewtu.be":"youtube_album_to_playlist.js","inv.nadeko.net":"youtube_album_to_playlist.js"},i="Play-In-Your-Player: ",r="open the console (F12), paste it and press Enter.",s=location.hostname.replace(/^www\./,"");function a(t){return fetch(e+t+"?_="+Date.now(),{cache:"no-store"}).then((function(e){if(!e.ok)throw new Error(t+" HTTP "+e.status);return e.text()}))}function c(t){for(var e in t)if(s===e||s.slice(-e.length-1)==="."+e)return t[e];return null}function u(t){window.open(e+t,"_blank")?alert(i+"this site blocks loading scripts.\nThe script ("+t+") has been opened in a new tab: select all (Ctrl+A), copy it (Ctrl+C), come back to this page, "+r):prompt(i+"this site blocks loading scripts.\nOpen this URL, copy the script, come back to this page and "+r,e+t)}a("manifest.json").then((function(t){var e=c(JSON.parse(t));if(e)return a(e).then((function(t){window.__pippRan=!1;try{var n=document.createElement("script");n.textContent="window.__pippRan=true;\n"+t,(document.head||document.documentElement).appendChild(n),n.remove()}catch(t){}window.__pippRan||function(t,e){var n=i+"this site blocks injected scripts.\n";navigator.clipboard?navigator.clipboard.writeText(e).then((function(){alert(n+"The script ("+t+") has been copied to the clipboard: "+r)}),(function(){u(t)})):u(t)}(e,t)}));alert(i+"no script registered for "+s+".")})).catch((function(t){t instanceof TypeError?function(){var t=c(o);if(t)try{var e=document.createElement("script");e.onerror=function(){e.remove(),u(t)},e.onload=function(){e.remove()},e.src=n+t,(document.head||document.documentElement).appendChild(e)}catch(e){u(t)}else alert(i+"this site blocks downloads from GitHub and "+s+" is not in the fallback list.")}():alert(i+"could not load the scripts ("+t.message+").")}))}();
+javascript:!function(){var t="Puxio/Play-In-Your-Player-Scripts",e="https://raw.githubusercontent.com/"+t+"/main/scripts/",n="https://cdn.jsdelivr.net/gh/"+t+"@main/scripts/",o={"musify.club":"musify_album_to_xspf.js","khinsider.com":"khinsider_album_to_xspf.js","squidify.org":"squidify_abum_to_xspf.js","youtube.com":"youtube_album_to_playlist.js","yewtu.be":"youtube_album_to_playlist.js","inv.nadeko.net":"youtube_album_to_playlist.js"},i="Play-In-Your-Player: ",r="open the console (F12), paste it and press Enter.",s=location.hostname.replace(/^www\./,"");function a(t){return fetch(e+t+"?_="+Date.now(),{cache:"no-store"}).then((function(e){if(!e.ok)throw new Error(t+" HTTP "+e.status);return e.text()}))}function c(t){for(var e in t)if(s===e||s.slice(-e.length-1)==="."+e)return t[e];return null}function l(t){window.open(e+t,"_blank")?alert(i+"this site blocks loading scripts.\nThe script ("+t+") has been opened in a new tab: select all (Ctrl+A), copy it (Ctrl+C), come back to this page, "+r):prompt(i+"this site blocks loading scripts.\nOpen this URL, copy the script, come back to this page and "+r,e+t)}a("manifest.json").then((function(t){var e=c(JSON.parse(t));if(e)return a(e).then((function(t){window.__pippRan=!1;try{var n=document.createElement("script");n.textContent="window.__pippRan=true;\n"+t,(document.head||document.documentElement).appendChild(n),n.remove()}catch(t){}window.__pippRan||function(t,e){var n=i+"this site blocks injected scripts.\n";navigator.clipboard?navigator.clipboard.writeText(e).then((function(){alert(n+"The script ("+t+") has been copied to the clipboard: "+r)}),(function(){l(t)})):l(t)}(e,t)}));alert(i+"no script registered for "+s+".")})).catch((function(t){t instanceof TypeError?function(){var t=c(o);if(t)try{var e=document.createElement("script");e.onerror=function(){e.remove(),l(t)},e.onload=function(){e.remove()},e.src=n+t,(document.head||document.documentElement).appendChild(e)}catch(e){l(t)}else alert(i+"this site blocks downloads from GitHub and "+s+" is not in the fallback list.")}():alert(i+"could not load the scripts ("+t.message+").")}))}();
 ```
 
 The same line is in [`bookmarklet/bookmarklet.txt`](bookmarklet/bookmarklet.txt). GitHub does not allow `javascript:` links, so it has to be copied and pasted rather than dragged.
 
-Current bookmarklet version: 1.1.0. If you installed an older one, replace its URL with the line above.
+Current bookmarklet version: 1.1.1. If you installed an older one, replace its URL with the line above.
 
 ### Use
 
 Open an album or playlist page on a supported site and click the bookmark. The .xspf file downloads automatically; open it with your player.
 
-On YouTube it takes two clicks: the first one, on the YouTube playlist page, redirects you to the same playlist on Invidious; the second one, on the Invidious page, downloads the .xspf.
+On YouTube, open the playlist or album page (or a video played from a playlist, with `&list=` in the URL) and click the bookmark. If YouTube blocks the injected script, the bookmarklet copies it to the clipboard instead: paste it into the console. The first time, Chrome asks you to type `allow pasting` before it accepts pasted code.
 
 ### How it works
 
@@ -58,7 +58,7 @@ Go to a supported music website and navigate to an album or playlist page. Open 
 ## Notes
 
 - **Musify links expire.** Musify signs its stream URLs, and the signature only lasts a few hours. Play the .xspf soon after creating it, and create it again (one click on the bookmark) when it stops working.
-- **YouTube** goes through a public Invidious instance; change the instance in the scripts if it is not available. Some Invidious instances do not accept CORS requests, which is why there is a redirect script. You need a YouTube capable player for YouTube playlists (for example AIMP with the YouTube plugin, or PotPlayer). If you switch to another Invidious instance, add its hostname to `scripts/manifest.json`.
+- **YouTube** playlists are read directly from youtube.com, so no Invidious instance and no redirect are needed (the script also works on the Invidious instances listed in `scripts/manifest.json`). You need a YouTube capable player for YouTube playlists (for example AIMP with the YouTube plugin, or PotPlayer). `redirect-youtube.js` is no longer used and is kept only for reference.
 
 ## Adding a new site
 

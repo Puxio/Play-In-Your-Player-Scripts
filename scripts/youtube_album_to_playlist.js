@@ -1,192 +1,243 @@
-// Helper function to extract the playlist ID from the current browser URL
-function getPlaylistIdFromCurrentUrl() {
-  const url = window.location.href; // Gets the current page's URL
+/**
+ * YouTube Playlist / Album to XSPF - v2.0.0
+ *
+ * Run in the DevTools console (or with the bookmarklet) on a YouTube
+ * playlist or album: https://www.youtube.com/playlist?list=... or a watch
+ * page with &list=... in the URL. It builds an XSPF playlist of
+ * youtube.com/watch links and downloads it. You need a player that can play
+ * YouTube links (for example AIMP with the YouTube plugin, or PotPlayer).
+ *
+ * On youtube.com the track list is read from YouTube itself: the playlist
+ * page data (ytInitialData) and, for playlists longer than 100 videos, the
+ * same continuation requests the page makes while scrolling. Every request
+ * is same-origin: no Invidious instance, no redirect, no browser check.
+ * music.youtube.com and m.youtube.com are sent to www.youtube.com first.
+ *
+ * On an Invidious instance the script still works, through that instance's
+ * own /api/v1/playlists endpoint.
+ *
+ * Albums (playlist ids starting with OLAK) are saved as
+ * "Artist - Album [Youtube].xspf", other playlists as "Title [Youtube].xspf".
+ *
+ * Changelog:
+ *   2.0.0 (2026-10-16) - Read playlists from youtube.com directly instead of
+ *                        a public Invidious instance (the redirect to
+ *                        yewtu.be stopped at a browser verification).
+ *                        Fixed XML escaping of &, <, > and quotes. Unplayable
+ *                        (deleted or private) videos are skipped. Only a
+ *                        leading "Album - " or trailing " - Album" is removed
+ *                        from album titles.
+ *   1.x                - Fetched the playlist from inv.nadeko.net.
+ */
+(async function () {
+    'use strict';
 
-  // Regex to capture the playlist ID from various YouTube URL formats
-  // Examples it handles:
-  // - https://www.youtube.com/playlist?list=PLcCUOL3_Hly8RNuTy8lw1CV3wTKdKJuTU
-  // - https://www.youtube.com/watch?v=VIDEO_ID&list=PLcCUOL3_Hly8RNuTy8lw1CV3wTKdKJuTU
-  const playlistIdMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+    const TAG = '[YouTube XSPF]';
 
-  if (playlistIdMatch && playlistIdMatch[1]) {
-    return playlistIdMatch[1]; // Returns the captured playlist ID
-  } else {
-    console.warn("No playlist ID found in the current URL.");
-    return null; // Return null if no ID is found
-  }
-}
+    const esc = (s) => String(s === null || s === undefined ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
-// --- Main Code Block ---
-async function getPlaylistVideosAndGenerateXSPF() {
-  // Attempt to get the playlist ID from the current page's URL
-  const playlistId = getPlaylistIdFromCurrentUrl();
-
-  if (!playlistId) {
-    console.error("Cannot proceed: Playlist ID not found in the URL. Ensure you are on a valid YouTube playlist page (e.g., https://www.youtube.com/playlist?list=...).");
-    return; // Exit the function if no ID is found
-  }
-
-  // Check if the playlist is an ALBUM (ID starts with "OLAK")
-  const isAlbum = playlistId.startsWith('OLAK');
-
-  // Choose an Invidious instance. You can find a list of instances here: https://docs.invidious.io/instances/
-  const invidiousInstance = 'https://inv.nadeko.net';
-  const apiUrl = `${invidiousInstance}/api/v1/playlists/${playlistId}`;
-
-  try {
-    const response = await fetch(apiUrl);
-
-    // Check if the HTTP request was successful (status 200 OK)
-    if (!response.ok) {
-      // If you get a 404 or similar error, the playlist ID might be wrong,
-      // or the Invidious instance might be unreachable/not have the API active.
-      throw new Error(`HTTP Error! Status: ${response.status} - Check playlist ID or Invidious instance.`);
+    const playlistId = (location.href.match(/[?&]list=([a-zA-Z0-9_-]+)/) || [])[1];
+    if (!playlistId) {
+        console.error(`${TAG} ❌ No playlist id (list=...) in the URL. Open a YouTube playlist or album page.`);
+        return;
     }
 
-    const data = await response.json(); // Parse the response as JSON
+    const host = location.hostname;
+    const onYouTube = /(^|\.)youtube\.com$/.test(host);
 
-    // Check if the playlist contains videos
-    if (data.videos && data.videos.length > 0) {
-      let xspfContent = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-      xspfContent += `<playlist version="1" xmlns="http://xspf.org/ns/0/">\n`;
-      xspfContent += `  <trackList>\n`;
+    // Only www.youtube.com serves the desktop page data read below.
+    if (onYouTube && host !== 'www.youtube.com') {
+        console.log(`${TAG} Opening this playlist on www.youtube.com: run the script again there.`);
+        location.href = `https://www.youtube.com/playlist?list=${playlistId}`;
+        return;
+    }
 
-      // Get the artist name from the *first* video if it's an album, as this
-      // often represents the album artist. We'll clean it immediately.
-      let albumArtist = 'Unknown Artist';
-      if (isAlbum && data.videos[0] && data.videos[0].author) {
-          albumArtist = data.videos[0].author;
-          if (albumArtist.endsWith(' - Topic')) {
-              albumArtist = albumArtist.replace(' - Topic', '').trim(); // Trim any extra space after removal
-          }
-      }
+    let playlistTitle = '';
+    let videos = []; // { videoId, title, author, position, seconds }
 
-      data.videos.forEach(video => {
-        // Standard YouTube video link format
-        const youtubeLink = `https://www.youtube.com/watch?v=${video.videoId}`;
-        // Position in the playlist (add +1 to make it 1-based, if available)
-        const position = video.index !== undefined ? video.index + 1 : 'N/A';
-        // Use 'let' for artist and title as they might be modified
+    if (onYouTube) {
+        // Text of a YouTube text object: { simpleText } or { runs: [{ text }] }.
+        const text = (t) => !t ? '' : (t.simpleText !== undefined ? t.simpleText : (t.runs || []).map((r) => r.text).join(''));
+
+        // "4:16" or "1:02:03" to seconds.
+        const parseLength = (s) => (s || '').split(':').reduce((acc, part) => acc * 60 + (parseInt(part, 10) || 0), 0);
+
+        // First object stored under `key` anywhere in the tree.
+        const find = (node, key) => {
+            if (!node || typeof node !== 'object') return null;
+            if (!Array.isArray(node) && node[key]) return node[key];
+            for (const k of Object.keys(node)) {
+                const found = find(node[k], key);
+                if (found) return found;
+            }
+            return null;
+        };
+
+        // Collect playlist video renderers and continuation tokens, in page order.
+        const collect = (node, out) => {
+            if (!node || typeof node !== 'object') return;
+            if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return; }
+            if (node.playlistVideoRenderer) { out.items.push(node.playlistVideoRenderer); return; }
+            if (node.continuationItemRenderer) {
+                const m = JSON.stringify(node.continuationItemRenderer).match(/"token":"([^"]+)"/);
+                if (m) out.tokens.push(m[1]);
+                return;
+            }
+            for (const k of Object.keys(node)) collect(node[k], out);
+        };
+
+        // Fresh page data for this playlist (window.ytInitialData can be stale
+        // after in-site navigation, and is missing on watch pages).
+        let data = null;
+        try {
+            const res = await fetch(`/playlist?list=${playlistId}`, { credentials: 'same-origin' });
+            const html = await res.text();
+            const m = html.match(/var ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+            if (m) data = JSON.parse(m[1]);
+        } catch (err) {
+            console.warn(`${TAG} Could not reload the playlist page (${err.message}); using the data already on this page.`);
+        }
+        if (!data && window.ytInitialData) data = window.ytInitialData;
+        if (!data) {
+            console.error(`${TAG} ❌ YouTube playlist data not found.`);
+            return;
+        }
+
+        const metadata = find(data, 'playlistMetadataRenderer');
+        const pageHeader = find(data, 'pageHeaderRenderer');
+        const oldHeader = find(data, 'playlistHeaderRenderer');
+        playlistTitle = (metadata && metadata.title)
+            || (pageHeader && pageHeader.pageTitle)
+            || (oldHeader && text(oldHeader.title))
+            || document.title.replace(/\s*-\s*YouTube\s*$/, '');
+
+        const out = { items: [], tokens: [] };
+        collect(find(data, 'playlistVideoListRenderer') || data, out);
+
+        // Playlists longer than 100 videos: ask for the next pages like the site does.
+        const context = window.ytcfg && window.ytcfg.get ? window.ytcfg.get('INNERTUBE_CONTEXT') : null;
+        for (let page = 0; out.tokens.length && page < 100; page++) {
+            if (!context) {
+                console.warn(`${TAG} ⚠️ Only the first ${out.items.length} videos could be read (YouTube config not found).`);
+                break;
+            }
+            const token = out.tokens.shift();
+            try {
+                const res = await fetch('/youtubei/v1/browse?prettyPrint=false', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context, continuation: token })
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                collect(json.onResponseReceivedActions || json, out);
+            } catch (err) {
+                console.warn(`${TAG} ⚠️ Stopped after ${out.items.length} videos: ${err.message}`);
+                break;
+            }
+        }
+
+        let skipped = 0;
+        for (const r of out.items) {
+            if (!r.videoId || r.isPlayable === false) { skipped++; continue; }
+            videos.push({
+                videoId: r.videoId,
+                title: text(r.title),
+                author: text(r.shortBylineText),
+                position: parseInt(text(r.index), 10) || videos.length + skipped + 1,
+                seconds: parseInt(r.lengthSeconds, 10) || parseLength(text(r.lengthText))
+            });
+        }
+        if (skipped) console.log(`${TAG} Skipped ${skipped} unplayable video(s) (deleted or private).`);
+    } else {
+        // Invidious instance: use its own API (same origin, no CORS issues).
+        try {
+            const res = await fetch(`${location.origin}/api/v1/playlists/${playlistId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            playlistTitle = data.title || '';
+            videos = (data.videos || []).map((v, i) => ({
+                videoId: v.videoId,
+                title: v.title,
+                author: v.author,
+                position: v.index !== undefined ? v.index + 1 : i + 1,
+                seconds: v.lengthSeconds
+            }));
+        } catch (err) {
+            console.error(`${TAG} ❌ Invidious API error: ${err.message}. Is this an Invidious instance with the API enabled?`);
+            return;
+        }
+    }
+
+    if (videos.length === 0) {
+        console.warn(`${TAG} ❌ No videos found in this playlist.`);
+        return;
+    }
+
+    // --- Album or plain playlist ---
+    const isAlbum = playlistId.startsWith('OLAK');
+    const stripTopic = (name) => (name || '').replace(/\s*-\s*Topic$/, '').trim();
+    const albumArtist = isAlbum ? (stripTopic(videos[0].author) || 'Unknown Artist') : '';
+
+    const trackXml = videos.map((video) => {
         let title = video.title || 'Unknown Title';
         let artist = video.author || 'Unknown Artist';
-        // Duration in milliseconds for XSPF format
-        const duration = video.lengthSeconds !== undefined ? video.lengthSeconds * 1000 : 0;
 
-        // *** LOGICA CORRETTA PER IL PARSING DEL TITOLO ***
-        // 1. First, check if it's a non-album playlist AND the artist name does not end with " - Topic".
-        if (!isAlbum && !artist.endsWith(' - Topic')) {
-            console.log('Original title:', title);
-
-            // Regex per catturare artista, numero traccia e titolo in un'unica operazione
-            const regex = /^(.+?)\s*-\s*\d+\s*[.-]\s*(.+)$/;
-            const match = title.match(regex);
-
+        // Uploads that are not "Artist - Topic" channels usually carry the
+        // artist in the title: "Artist - 01. Title" or "Artist - Title".
+        if (!isAlbum && !/\s-\sTopic$/.test(artist)) {
+            const match = title.match(/^(.+?)\s*-\s*\d+\s*[.-]\s*(.+)$/);
             if (match) {
                 artist = match[1].trim();
                 title = match[2].trim();
             } else {
-                // Se la regex non trova il formato, prova lo split semplice
-                const parts = title.split(' - ', 2);
+                const parts = title.split(' - ');
                 if (parts.length === 2) {
                     artist = parts[0].trim();
                     title = parts[1].trim();
                 }
             }
-
-            console.log('Parsed artist:', artist);
-            console.log('Parsed title:', title);
         }
+        artist = stripTopic(artist);
 
-        // 2. Second, UNCONDITIONALLY remove " - Topic" from the artist name if present.
-        if (artist.endsWith(' - Topic')) {
-            artist = artist.replace(' - Topic', '').trim();
-        }
-
-        // Append <track> tags with details to the XSPF content
-        xspfContent += `    <track>\n`;
-        xspfContent += `      <trackNum>${position}</trackNum>\n`;
-        xspfContent += `      <title>${escapeXml(title)}</title>\n`; // Escape for special characters
-        xspfContent += `      <creator>${escapeXml(artist)}</creator>\n`; // Escape for special characters
-        xspfContent += `      <location>${escapeXml(youtubeLink)}</location>\n`; // Escape for special characters
-        xspfContent += `      <duration>${duration}</duration>\n`;
-        // Thumbnail part was removed as per user's request
-        xspfContent += `    </track>\n`;
-      });
-
-      xspfContent += `  </trackList>\n`;
-      xspfContent += `</playlist>`;
-
-      let playlistTitle = data.title || 'Unknown Playlist';
-      let fileName;
-
-      // If it's an ALBUM, modify the filename to be "Artist - AlbumName [Youtube].xspf"
-      if (isAlbum) {
-          // Remove "Album" (and any associated dash/space) from the playlist title
-          // Use a regex to catch "Album - ", "- Album", "Album", or " - Album"
-          playlistTitle = playlistTitle.replace(/(\s*-\s*Album|\s*Album\s*-|\s*Album)\s*/gi, '').trim();
-
-          // Construct the new filename: "Artist - Title [Youtube].xspf"
-          // Ensure there's only one dash between artist and title, and clean up extra spaces
-          fileName = `${albumArtist} - ${playlistTitle} [Youtube].xspf`.replace(/  +/g, ' ').trim();
-      } else {
-          // For non-albums, use the original format: "Playlist Title [Youtube].xspf"
-          fileName = `${playlistTitle} [Youtube].xspf`;
-      }
-
-
-      // Now, save the XSPF content as a file
-      saveXSPFFile(xspfContent, fileName);
-
-      console.log(`XSPF content generated and attempting download as: ${fileName}`);
-      console.log('Check your downloads folder.');
-
-    } else {
-      console.log('No videos found in this playlist or invalid playlist ID.');
-    }
-
-  } catch (error) {
-    console.error('An error occurred during playlist retrieval or XSPF generation:', error, '\nEnsure the Invidious instance URL is correct and the playlist ID is valid.');
-  }
-}
-
-// Helper function to escape special XML characters
-function escapeXml(unsafe) {
-    return unsafe.replace(/[<>&'"]/g, function (c) {
-        switch (c) {
-            case '<': return '<'; // Less than sign
-            case '>': return '>'; // Greater than sign
-            case '&': return '&'; // Ampersand
-            case '\'': return ''; // Corrected: Single quote or apostrophe
-            case '"': return '"'; // Double quote
-        }
+        let xml = '    <track>\n';
+        xml += `      <trackNum>${esc(video.position)}</trackNum>\n`;
+        xml += `      <title>${esc(title)}</title>\n`;
+        xml += `      <creator>${esc(artist)}</creator>\n`;
+        xml += `      <location>${esc('https://www.youtube.com/watch?v=' + video.videoId)}</location>\n`;
+        if (video.seconds) xml += `      <duration>${video.seconds * 1000}</duration>\n`;
+        xml += '    </track>';
+        return xml;
     });
-}
 
-// Function to save the generated XSPF content as a file via Blob
-function saveXSPFFile(content, fileName) {
-    // Create a Blob object with the XML content and correct MIME type
-    const blob = new Blob([content], { type: 'application/xspf+xml;charset=utf-8' });
+    let name = playlistTitle || 'Unknown Playlist';
+    let fileName;
+    if (isAlbum) {
+        name = name.replace(/^\s*Album\s*-\s*/i, '').replace(/\s*-\s*Album\s*$/i, '').trim();
+        fileName = `${albumArtist} - ${name} [Youtube].xspf`;
+    } else {
+        fileName = `${name} [Youtube].xspf`;
+    }
+    fileName = fileName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s{2,}/g, ' ').trim();
 
-    // Create a temporary URL for the Blob
-    const url = URL.createObjectURL(blob);
+    let xspf = '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n';
+    xspf += `  <title>${esc(name)}</title>\n`;
+    if (isAlbum) xspf += `  <creator>${esc(albumArtist)}</creator>\n`;
+    xspf += `  <trackList>\n${trackXml.join('\n')}\n  </trackList>\n</playlist>`;
 
-    // Create a hidden <a> element to trigger download
+    // --- Download ---
+    const blob = new Blob([xspf], { type: 'application/xspf+xml;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName; // Set the file name for download
-
-    // Simulate a click on the <a> element to trigger the download
-    document.body.appendChild(a); // Appending is often needed for Firefox
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
-    // Clean up: remove the <a> element and revoke the Blob URL to free up memory
-    document.body.removeChild(a); // Remove from DOM
-    URL.revokeObjectURL(url); // Release the object URL
-}
-
-// --- Launch the main function on script execution ---
-// IMPORTANT: This code is intended to be run in a browser environment.
-// If you are on a YouTube page directly, you will likely need a browser extension
-// (e.g., using a Content Script) due to browser security restrictions
-// like Content Security Policy (CSP) and Same-Origin Policy).
-getPlaylistVideosAndGenerateXSPF();
+    console.log(`${TAG} ✅ ${videos.length} videos exported to "${fileName}".`);
+})();
