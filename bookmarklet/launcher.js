@@ -1,5 +1,5 @@
 /**
- * Play-In-Your-Player bookmarklet launcher - v1.1.1
+ * Play-In-Your-Player bookmarklet launcher - v1.1.2
  *
  * One bookmark for every supported site. When clicked, it:
  *   1. reads the current hostname (www. is ignored, subdomains match their
@@ -34,6 +34,7 @@
  *   npx terser bookmarklet/launcher.js -c -m | sed 's/^/javascript:/' > bookmarklet/bookmarklet.txt
  *
  * Changelog:
+ *   1.1.2 (2026-10-16) - FALLBACK map: removed the Invidious instances.
  *   1.1.1 (2026-10-16) - FALLBACK map: youtube.com runs the YouTube script
  *                        directly (the Invidious redirect is no longer used).
  *   1.1.0 (2026-10-16) - Fallbacks for sites that block downloads from
@@ -48,9 +49,7 @@
         'musify.club': 'musify_album_to_xspf.js',
         'khinsider.com': 'khinsider_album_to_xspf.js',
         'squidify.org': 'squidify_abum_to_xspf.js',
-        'youtube.com': 'youtube_album_to_playlist.js',
-        'yewtu.be': 'youtube_album_to_playlist.js',
-        'inv.nadeko.net': 'youtube_album_to_playlist.js'
+        'youtube.com': 'youtube_album_to_playlist.js'
     };
     var TAG = 'Play-In-Your-Player: ';
     var PASTE = 'open the console (F12), paste it and press Enter.';

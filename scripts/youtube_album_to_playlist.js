@@ -1,5 +1,5 @@
 /**
- * YouTube Playlist / Album to XSPF - v2.1.0
+ * YouTube Playlist / Album to XSPF - v3.0.0
  *
  * Run in the DevTools console (or with the bookmarklet) on a YouTube
  * playlist or album: https://www.youtube.com/playlist?list=... or a watch
@@ -7,19 +7,18 @@
  * youtube.com/watch links and downloads it. You need a player that can play
  * YouTube links (for example AIMP with the YouTube plugin, or PotPlayer).
  *
- * On youtube.com the track list is read from YouTube itself: the playlist
+ * The track list is read from YouTube itself: the playlist
  * page data (ytInitialData) and, for playlists longer than 100 videos, the
  * same continuation requests the page makes while scrolling. Every request
- * is same-origin: no Invidious instance, no redirect, no browser check.
+ * is same-origin.
  * music.youtube.com and m.youtube.com are sent to www.youtube.com first.
- *
- * On an Invidious instance the script still works, through that instance's
- * own /api/v1/playlists endpoint.
  *
  * Albums (playlist ids starting with OLAK) are saved as
  * "Artist - Album [Youtube].xspf", other playlists as "Title [Youtube].xspf".
  *
  * Changelog:
+ *   3.0.0 (2026-10-16) - Removed Invidious support: the script now runs on
+ *                        youtube.com only.
  *   2.1.0 (2026-10-16) - Support the current playlist page layout, where each
  *                        video is a lockupViewModel instead of a
  *                        playlistVideoRenderer (2.0.0 found no videos). Album
@@ -52,8 +51,13 @@
     const host = location.hostname;
     const onYouTube = /(^|\.)youtube\.com$/.test(host);
 
+    if (!onYouTube) {
+        console.error(`${TAG} ❌ Run this script on a YouTube playlist page (www.youtube.com/playlist?list=...).`);
+        return;
+    }
+
     // Only www.youtube.com serves the desktop page data read below.
-    if (onYouTube && host !== 'www.youtube.com') {
+    if (host !== 'www.youtube.com') {
         console.log(`${TAG} Opening this playlist on www.youtube.com: run the script again there.`);
         location.href = `https://www.youtube.com/playlist?list=${playlistId}`;
         return;
@@ -63,162 +67,142 @@
     let headerArtist = '';
     let videos = []; // { videoId, title, author, position, seconds }
 
-    if (onYouTube) {
-        // Text of a YouTube text object: { simpleText } or { runs: [{ text }] }.
-        const text = (t) => !t ? '' : (t.simpleText !== undefined ? t.simpleText : (t.runs || []).map((r) => r.text).join(''));
+    // Text of a YouTube text object: { simpleText } or { runs: [{ text }] }.
+    const text = (t) => !t ? '' : (t.simpleText !== undefined ? t.simpleText : (t.runs || []).map((r) => r.text).join(''));
 
-        // "4:16" or "1:02:03" to seconds.
-        const parseLength = (s) => (s || '').split(':').reduce((acc, part) => acc * 60 + (parseInt(part, 10) || 0), 0);
+    // "4:16" or "1:02:03" to seconds.
+    const parseLength = (s) => (s || '').split(':').reduce((acc, part) => acc * 60 + (parseInt(part, 10) || 0), 0);
 
-        // First object stored under `key` anywhere in the tree.
-        const find = (node, key) => {
-            if (!node || typeof node !== 'object') return null;
-            if (!Array.isArray(node) && node[key]) return node[key];
-            for (const k of Object.keys(node)) {
-                const found = find(node[k], key);
-                if (found) return found;
-            }
-            return null;
-        };
-
-        // Older layout: one playlistVideoRenderer per video.
-        const fromRenderer = (r) => ({
-            videoId: r.videoId,
-            title: text(r.title),
-            author: text(r.shortBylineText),
-            index: parseInt(text(r.index), 10) || null,
-            seconds: parseInt(r.lengthSeconds, 10) || parseLength(text(r.lengthText)),
-            playable: r.isPlayable !== false
-        });
-
-        // Current layout (2026): one lockupViewModel per video. Title in
-        // metadata.title.content, channel in the first metadata row, duration
-        // as a thumbnail badge ("4:32"), position in the watchEndpoint index.
-        const fromLockup = (l) => {
-            const meta = (l.metadata && l.metadata.lockupMetadataViewModel) || {};
-            const rows = ((meta.metadata || {}).contentMetadataViewModel || {}).metadataRows || [];
-            const firstPart = rows[0] && rows[0].metadataParts && rows[0].metadataParts[0];
-            const watch = find(l.rendererContext || {}, 'watchEndpoint') || {};
-            const badge = JSON.stringify(l.contentImage || {}).match(/"text":"(\d{1,2}(?::\d{2}){1,2})"/);
-            return {
-                videoId: l.contentId || watch.videoId,
-                title: (meta.title && meta.title.content) || '',
-                author: (firstPart && firstPart.text && firstPart.text.content) || '',
-                index: typeof watch.index === 'number' ? watch.index + 1 : null,
-                seconds: badge ? parseLength(badge[1]) : 0,
-                playable: true
-            };
-        };
-
-        // Collect videos and continuation tokens, in page order.
-        const collect = (node, out) => {
-            if (!node || typeof node !== 'object') return;
-            if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return; }
-            if (node.playlistVideoRenderer) { out.items.push(fromRenderer(node.playlistVideoRenderer)); return; }
-            if (node.lockupViewModel) {
-                const l = node.lockupViewModel;
-                if (!l.contentType || l.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO') out.items.push(fromLockup(l));
-                return;
-            }
-            if (node.continuationItemRenderer) {
-                const m = JSON.stringify(node.continuationItemRenderer).match(/"token":"([^"]+)"/);
-                if (m) out.tokens.push(m[1]);
-                return;
-            }
-            for (const k of Object.keys(node)) collect(node[k], out);
-        };
-
-        // Fresh page data for this playlist (window.ytInitialData can be stale
-        // after in-site navigation, and is missing on watch pages).
-        let data = null;
-        try {
-            const res = await fetch(`/playlist?list=${playlistId}`, { credentials: 'same-origin' });
-            const html = await res.text();
-            const m = html.match(/var ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
-            if (m) data = JSON.parse(m[1]);
-        } catch (err) {
-            console.warn(`${TAG} Could not reload the playlist page (${err.message}); using the data already on this page.`);
+    // First object stored under `key` anywhere in the tree.
+    const find = (node, key) => {
+        if (!node || typeof node !== 'object') return null;
+        if (!Array.isArray(node) && node[key]) return node[key];
+        for (const k of Object.keys(node)) {
+            const found = find(node[k], key);
+            if (found) return found;
         }
-        if (!data && window.ytInitialData) data = window.ytInitialData;
-        if (!data) {
-            console.error(`${TAG} ❌ YouTube playlist data not found.`);
+        return null;
+    };
+
+    // Older layout: one playlistVideoRenderer per video.
+    const fromRenderer = (r) => ({
+        videoId: r.videoId,
+        title: text(r.title),
+        author: text(r.shortBylineText),
+        index: parseInt(text(r.index), 10) || null,
+        seconds: parseInt(r.lengthSeconds, 10) || parseLength(text(r.lengthText)),
+        playable: r.isPlayable !== false
+    });
+
+    // Current layout (2026): one lockupViewModel per video. Title in
+    // metadata.title.content, channel in the first metadata row, duration
+    // as a thumbnail badge ("4:32"), position in the watchEndpoint index.
+    const fromLockup = (l) => {
+        const meta = (l.metadata && l.metadata.lockupMetadataViewModel) || {};
+        const rows = ((meta.metadata || {}).contentMetadataViewModel || {}).metadataRows || [];
+        const firstPart = rows[0] && rows[0].metadataParts && rows[0].metadataParts[0];
+        const watch = find(l.rendererContext || {}, 'watchEndpoint') || {};
+        const badge = JSON.stringify(l.contentImage || {}).match(/"text":"(\d{1,2}(?::\d{2}){1,2})"/);
+        return {
+            videoId: l.contentId || watch.videoId,
+            title: (meta.title && meta.title.content) || '',
+            author: (firstPart && firstPart.text && firstPart.text.content) || '',
+            index: typeof watch.index === 'number' ? watch.index + 1 : null,
+            seconds: badge ? parseLength(badge[1]) : 0,
+            playable: true
+        };
+    };
+
+    // Collect videos and continuation tokens, in page order.
+    const collect = (node, out) => {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return; }
+        if (node.playlistVideoRenderer) { out.items.push(fromRenderer(node.playlistVideoRenderer)); return; }
+        if (node.lockupViewModel) {
+            const l = node.lockupViewModel;
+            if (!l.contentType || l.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO') out.items.push(fromLockup(l));
             return;
         }
-
-        const metadata = find(data, 'playlistMetadataRenderer');
-        const pageHeader = find(data, 'pageHeaderRenderer');
-        const playlistHeader = find(data.header || {}, 'playlistHeaderRenderer');
-        playlistTitle = (metadata && metadata.title)
-            || (pageHeader && pageHeader.pageTitle)
-            || (playlistHeader && text(playlistHeader.title))
-            || document.title.replace(/\s*-\s*YouTube\s*$/, '');
-
-        // Album header subtitle: "Generation Steel • Album".
-        if (playlistHeader && playlistHeader.subtitle) {
-            headerArtist = text(playlistHeader.subtitle).split(/\s+•\s+/)[0].trim();
+        if (node.continuationItemRenderer) {
+            const m = JSON.stringify(node.continuationItemRenderer).match(/"token":"([^"]+)"/);
+            if (m) out.tokens.push(m[1]);
+            return;
         }
+        for (const k of Object.keys(node)) collect(node[k], out);
+    };
 
-        // The video list: playlistVideoListRenderer (older layout) or the
-        // sectionListRenderer of the browse tab (current layout).
-        const contents = data.contents || data;
-        const out = { items: [], tokens: [] };
-        collect(find(contents, 'playlistVideoListRenderer') || find(contents, 'sectionListRenderer') || contents, out);
+    // Fresh page data for this playlist (window.ytInitialData can be stale
+    // after in-site navigation, and is missing on watch pages).
+    let data = null;
+    try {
+        const res = await fetch(`/playlist?list=${playlistId}`, { credentials: 'same-origin' });
+        const html = await res.text();
+        const m = html.match(/var ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+        if (m) data = JSON.parse(m[1]);
+    } catch (err) {
+        console.warn(`${TAG} Could not reload the playlist page (${err.message}); using the data already on this page.`);
+    }
+    if (!data && window.ytInitialData) data = window.ytInitialData;
+    if (!data) {
+        console.error(`${TAG} ❌ YouTube playlist data not found.`);
+        return;
+    }
 
-        // Playlists longer than 100 videos: ask for the next pages like the site does.
-        const context = window.ytcfg && window.ytcfg.get ? window.ytcfg.get('INNERTUBE_CONTEXT') : null;
-        for (let page = 0; out.tokens.length && page < 100; page++) {
-            if (!context) {
-                console.warn(`${TAG} ⚠️ Only the first ${out.items.length} videos could be read (YouTube config not found).`);
-                break;
-            }
-            const token = out.tokens.shift();
-            try {
-                const res = await fetch('/youtubei/v1/browse?prettyPrint=false', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ context, continuation: token })
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const json = await res.json();
-                collect(json.onResponseReceivedActions || json, out);
-            } catch (err) {
-                console.warn(`${TAG} ⚠️ Stopped after ${out.items.length} videos: ${err.message}`);
-                break;
-            }
+    const metadata = find(data, 'playlistMetadataRenderer');
+    const pageHeader = find(data, 'pageHeaderRenderer');
+    const playlistHeader = find(data.header || {}, 'playlistHeaderRenderer');
+    playlistTitle = (metadata && metadata.title)
+        || (pageHeader && pageHeader.pageTitle)
+        || (playlistHeader && text(playlistHeader.title))
+        || document.title.replace(/\s*-\s*YouTube\s*$/, '');
+
+    // Album header subtitle: "Generation Steel • Album".
+    if (playlistHeader && playlistHeader.subtitle) {
+        headerArtist = text(playlistHeader.subtitle).split(/\s+•\s+/)[0].trim();
+    }
+
+    // The video list: playlistVideoListRenderer (older layout) or the
+    // sectionListRenderer of the browse tab (current layout).
+    const contents = data.contents || data;
+    const out = { items: [], tokens: [] };
+    collect(find(contents, 'playlistVideoListRenderer') || find(contents, 'sectionListRenderer') || contents, out);
+
+    // Playlists longer than 100 videos: ask for the next pages like the site does.
+    const context = window.ytcfg && window.ytcfg.get ? window.ytcfg.get('INNERTUBE_CONTEXT') : null;
+    for (let page = 0; out.tokens.length && page < 100; page++) {
+        if (!context) {
+            console.warn(`${TAG} ⚠️ Only the first ${out.items.length} videos could be read (YouTube config not found).`);
+            break;
         }
-
-        let skipped = 0;
-        for (const item of out.items) {
-            if (!item.videoId || !item.playable) { skipped++; continue; }
-            videos.push({
-                videoId: item.videoId,
-                title: item.title,
-                author: item.author,
-                position: item.index || videos.length + skipped + 1,
-                seconds: item.seconds
+        const token = out.tokens.shift();
+        try {
+            const res = await fetch('/youtubei/v1/browse?prettyPrint=false', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ context, continuation: token })
             });
-        }
-        if (skipped) console.log(`${TAG} Skipped ${skipped} unplayable video(s) (deleted or private).`);
-    } else {
-        // Invidious instance: use its own API (same origin, no CORS issues).
-        try {
-            const res = await fetch(`${location.origin}/api/v1/playlists/${playlistId}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            playlistTitle = data.title || '';
-            videos = (data.videos || []).map((v, i) => ({
-                videoId: v.videoId,
-                title: v.title,
-                author: v.author,
-                position: v.index !== undefined ? v.index + 1 : i + 1,
-                seconds: v.lengthSeconds
-            }));
+            const json = await res.json();
+            collect(json.onResponseReceivedActions || json, out);
         } catch (err) {
-            console.error(`${TAG} ❌ Invidious API error: ${err.message}. Is this an Invidious instance with the API enabled?`);
-            return;
+            console.warn(`${TAG} ⚠️ Stopped after ${out.items.length} videos: ${err.message}`);
+            break;
         }
     }
+
+    let skipped = 0;
+    for (const item of out.items) {
+        if (!item.videoId || !item.playable) { skipped++; continue; }
+        videos.push({
+            videoId: item.videoId,
+            title: item.title,
+            author: item.author,
+            position: item.index || videos.length + skipped + 1,
+            seconds: item.seconds
+        });
+    }
+    if (skipped) console.log(`${TAG} Skipped ${skipped} unplayable video(s) (deleted or private).`);
 
     if (videos.length === 0) {
         console.warn(`${TAG} ❌ No videos found in this playlist.`);
