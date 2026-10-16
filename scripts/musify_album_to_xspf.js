@@ -1,5 +1,5 @@
 /**
- * XSPF Playlist Generator for Musify.club - v1.1.2
+ * XSPF Playlist Generator for Musify.club - v1.1.3
  *
  * This script is designed to run in the DevTools console of an Album/Playlist
  * page on musify.club. It extracts track details, fetches the real MP3 URL
@@ -13,13 +13,18 @@
  *    JSON `{ url, title, cover, trackUrl }` with a signed MP3 URL.
  *  - This script reproduces that call for every track. Calls are same-origin
  *    so there are no CORS issues. Signed URLs include an `expires` parameter,
- *    so the resulting XSPF is time-limited (typically valid for several days).
+ *    so the resulting XSPF is time-limited (typically valid for a few days).
  *
  * Changelog:
+ *   1.1.3 (2026-10-16) - Revert the query-string strip from 1.1.1. The
+ *                        `expires` and `sig` parameters authenticate the
+ *                        request on the Musify CDN; without them the server
+ *                        responds HTTP 404 and playback fails. The XSPF is
+ *                        now time-limited but actually plays.
  *   1.1.2 (2026-06-14) - Add .tracklist__meta2 span:first-child as primary
  *                        duration selector for the 2026 layout.
  *   1.1.1 (2026-06-14) - Strip query parameters (expires, sig) from stream URLs
- *                        in the XSPF <location> field.
+ *                        in the XSPF <location> field. [REVERTED in 1.1.3]
  *   1.1.0 (2026-05-08) - Adapted to the new musify.club layout: now reads
  *                        data-track-id from each .playlist__item row and
  *                        fetches signed MP3 URLs from /api/track/{id}/stream-url.
@@ -182,7 +187,10 @@
             return null;
         }
 
-        // Fetch the real signed MP3 URL via the new API endpoint
+        // Fetch the real signed MP3 URL via the new API endpoint.
+        // IMPORTANT: keep the full URL including the ?expires=...&sig=... query
+        // string. Those parameters authenticate the request on the Musify CDN;
+        // without them the server returns HTTP 404 and the file will not play.
         const url = await fetchStreamUrl(trackId);
         if (!url) {
             console.warn(`[Item Index ${index + 1}] Skip: could not resolve stream URL for track ${trackId}.`);
@@ -230,9 +238,9 @@
             if (durationInSeconds !== -1) break;
         }
 
-        // Construct XSPF <track> Entry
+        // Construct XSPF <track> Entry (keep the full signed URL)
         let trackXml = '    <track>\n';
-        trackXml +=     `      <location>${escapeXml(url.split('?')[0])}</location>\n`;
+        trackXml +=     `      <location>${escapeXml(url)}</location>\n`;
         if (durationInSeconds !== -1) { trackXml += `      <duration>${durationInSeconds * 1000}</duration>\n`; }
         if (trackArtist !== 'Unknown Artist') { trackXml += `      <creator>${escapeXml(trackArtist)}</creator>\n`; }
         if (trackTitle !== 'Unknown Track') { trackXml += `      <title>${escapeXml(trackTitle)}</title>\n`; }
