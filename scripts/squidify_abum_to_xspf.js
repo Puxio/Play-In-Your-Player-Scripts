@@ -1,148 +1,160 @@
 /**
- * Squidify.org XSPF Auto-Collector
- * * @version  1.0.0
- * @description Automatically iterates through [role=table] rows, waits for audio 
- * metadata, and exports an XSPF playlist with accurate durations.
+ * Squidify.org XSPF Playlist Generator - v2.0.0
+ *
+ * Run in the DevTools console on an album or playlist page of
+ * www.squidify.org. It builds an XSPF playlist and downloads it.
+ *
+ * Squidify is a Subsonic compatible music server. The page loads its cover
+ * art from /rest/getCoverArt with the guest credentials it uses for every
+ * visitor (u, t, s, v, c). The script reuses those same parameters to ask
+ * the Subsonic API for the track list (getAlbum / getPlaylist) and writes a
+ * /rest/stream URL for each track, which streams the original file (FLAC).
+ * Subsonic token authentication does not expire on its own, so the XSPF
+ * keeps working until the site changes its guest credentials.
+ *
+ * Calls are same-origin, so they are allowed by the site's security policy.
+ *
+ * Changelog:
+ *   2.0.0 (2026-10-16) - Rewritten for the new Squidify site (Svelte). The
+ *                        [role=table] track list no longer exists; tracks
+ *                        now come from the Subsonic API instead of clicking
+ *                        each row and reading the <audio> element.
+ *   1.0.0              - Clicked each [role=table] row and captured the
+ *                        audio source and duration.
  */
-
-(function() {
+(async function () {
     'use strict';
 
-    // --- State Storage ---
-    window.capturedTracks = [];
-    
-    const h1Element = document.querySelector('h1');
-    const playlistTitle = h1Element ? h1Element.innerText.trim() : "Squidify Playlist";
+    const TAG = '[Squidify XSPF]';
+    const DEFAULT_API_VERSION = '1.16.1';
+    const DEFAULT_CLIENT = 'play-in-your-player';
 
-    console.clear();
-    console.log(`%c 🤖 SQUIDIFY AUTO-COLLECTOR v1.0.0 `, "background: #00796B; color: white; font-weight: bold; padding: 4px; border-radius: 4px;");
+    const esc = (s) => String(s === null || s === undefined ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
-    // --- UI Status Overlay ---
-    const statusOverlay = document.createElement('div');
-    Object.assign(statusOverlay.style, {
-        position: 'fixed', top: '20px', right: '20px', zIndex: '9999999',
-        padding: '15px', backgroundColor: 'rgba(15, 15, 15, 0.95)', color: '#00E676',
-        borderRadius: '8px', fontFamily: 'monospace', border: '1px solid #00E676', 
-        boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '180px'
+    // --- 1. Guest credentials, taken from the cover art URL on the page ---
+    const coverImg = document.querySelector('img[src*="/rest/getCoverArt"]');
+    if (!coverImg) {
+        console.error(`${TAG} ❌ Cover art not found. Open an album or playlist page and wait for it to load.`);
+        return;
+    }
+    const coverUrl = new URL(coverImg.src, location.href);
+    const origin = coverUrl.origin;
+
+    const auth = new URLSearchParams();
+    for (const [key, value] of coverUrl.searchParams) {
+        if (!['id', 'size', 'f'].includes(key)) auth.set(key, value);
+    }
+    if (!auth.has('u') || !(auth.has('t') || auth.has('p'))) {
+        console.error(`${TAG} ❌ No Subsonic credentials in the cover URL:`, coverImg.src);
+        return;
+    }
+    if (!auth.has('v')) auth.set('v', DEFAULT_API_VERSION);
+    if (!auth.has('c')) auth.set('c', DEFAULT_CLIENT);
+
+    // Call a Subsonic API method and return its "subsonic-response" object.
+    const callApi = async (method, params) => {
+        const query = new URLSearchParams(auth);
+        for (const key in params) query.set(key, params[key]);
+        query.set('f', 'json');
+        const response = await fetch(`${origin}/rest/${method}?${query}`, { credentials: 'same-origin' });
+        if (!response.ok) throw new Error(`${method} HTTP ${response.status}`);
+        const data = (await response.json())['subsonic-response'];
+        if (!data || data.status !== 'ok') {
+            throw new Error(`${method}: ${data && data.error ? data.error.message : 'unexpected response'}`);
+        }
+        return data;
+    };
+
+    // --- 2. Which album or playlist this page shows ---
+    const segments = location.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    const isPlaylist = segments.some((s) => /playlist/i.test(s));
+    const segmentAfter = (pattern) => {
+        const i = segments.findIndex((s) => pattern.test(s));
+        return i >= 0 ? segments[i + 1] : null;
+    };
+    const queryId = new URLSearchParams(location.search).get('id');
+
+    const candidates = [];
+    if (isPlaylist) {
+        candidates.push(segmentAfter(/playlist/i), queryId, segments[segments.length - 1]);
+    } else {
+        candidates.push(segmentAfter(/^albums?$/i), queryId, segments[segments.length - 1]);
+        // Album cover ids look like "al-<albumId>_<hex>".
+        const coverMatch = (coverUrl.searchParams.get('id') || '').match(/^al-(.+?)(?:_[0-9a-f]+)?$/);
+        if (coverMatch) candidates.push(coverMatch[1]);
+    }
+    const ids = [...new Set(candidates.filter(Boolean))];
+
+    let info = null;
+    let songs = [];
+    for (const id of ids) {
+        try {
+            if (isPlaylist) {
+                const data = await callApi('getPlaylist', { id });
+                info = { name: data.playlist.name, artist: data.playlist.owner };
+                songs = data.playlist.entry || [];
+            } else {
+                const data = await callApi('getAlbum', { id });
+                info = data.album;
+                songs = (data.album.song || []).slice().sort((a, b) =>
+                    ((a.discNumber || 1) - (b.discNumber || 1)) || ((a.track || 0) - (b.track || 0)));
+            }
+            console.log(`${TAG} ${isPlaylist ? 'Playlist' : 'Album'} id: ${id}`);
+            break;
+        } catch (err) {
+            console.warn(`${TAG} id "${id}" rejected: ${err.message}`);
+        }
+    }
+
+    if (!info) {
+        console.error(`${TAG} ❌ Could not read the track list from the Subsonic API (tried: ${ids.join(', ') || 'no id found'}).`);
+        return;
+    }
+    if (songs.length === 0) {
+        console.warn(`${TAG} ❌ The ${isPlaylist ? 'playlist' : 'album'} has no tracks.`);
+        return;
+    }
+
+    // --- 3. Build the XSPF ---
+    const title = info.name || (document.querySelector('h1') || {}).innerText || 'Squidify Playlist';
+    const streamUrl = (songId) => {
+        const query = new URLSearchParams(auth);
+        query.set('id', songId);
+        return `${origin}/rest/stream?${query}`;
+    };
+
+    const trackXml = songs.map((song, index) => {
+        let xml = '    <track>\n';
+        xml += `      <location>${esc(streamUrl(song.id))}</location>\n`;
+        if (song.title) xml += `      <title>${esc(song.title)}</title>\n`;
+        if (song.artist) xml += `      <creator>${esc(song.artist)}</creator>\n`;
+        xml += `      <album>${esc(song.album || title)}</album>\n`;
+        xml += `      <trackNum>${esc(isPlaylist ? index + 1 : (song.track || index + 1))}</trackNum>\n`;
+        if (song.duration) xml += `      <duration>${Math.round(song.duration * 1000)}</duration>\n`;
+        xml += '    </track>';
+        return xml;
     });
-    statusOverlay.innerHTML = `
-        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px; padding-bottom:5px;">SQUIDIFY SCRAPER v1.0.0</div>
-        <div id="sq-status">READY</div>
-        <div id="sq-count" style="font-size: 24px; margin: 8px 0;">0</div>
-        <div id="sq-progress" style="font-size: 10px; opacity: 0.7;">Waiting for trigger...</div>
-    `;
-    document.body.appendChild(statusOverlay);
 
-    const updateUI = (status, count, progress) => {
-        document.getElementById('sq-status').innerText = status;
-        document.getElementById('sq-count').innerText = count;
-        document.getElementById('sq-progress').innerText = progress;
-    };
+    let xspf = '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n';
+    xspf += `  <title>${esc(title)}</title>\n`;
+    if (info.artist) xspf += `  <creator>${esc(info.artist)}</creator>\n`;
+    xspf += `  <location>${esc(location.href)}</location>\n`;
+    xspf += `  <image>${esc(coverImg.src)}</image>\n`;
+    xspf += `  <trackList>\n${trackXml.join('\n')}\n  </trackList>\n</playlist>`;
 
-    /**
-     * Promise-based wait for audio metadata with safety checks
-     */
-    const waitForMetadata = () => {
-        return new Promise((resolve) => {
-            const audio = document.querySelector('audio');
-            
-            if (!audio) {
-                console.warn("Audio element missing, retrying in 1s...");
-                setTimeout(resolve, 1000);
-                return;
-            }
+    // --- 4. Download ---
+    const filename = `${title} [Squidify.org].xspf`.replace(/[\\/:*?"<>|]/g, '_');
+    const blob = new Blob([xspf], { type: 'application/xspf+xml' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
-            const onLoaded = () => {
-                audio.removeEventListener('loadedmetadata', onLoaded);
-                // Stabilization delay to avoid AbortError on next click
-                setTimeout(resolve, 1000);
-            };
-
-            audio.addEventListener('loadedmetadata', onLoaded);
-            
-            // Timeout: move to next track if metadata doesn't load in 12s
-            setTimeout(() => {
-                audio.removeEventListener('loadedmetadata', onLoaded);
-                resolve();
-            }, 12000);
-        });
-    };
-
-    /**
-     * Main Scraper Engine
-     */
-    const run = async () => {
-        const table = document.querySelectorAll('[role=table]')[0];
-        const rows = Array.from(table?.querySelectorAll('[role=row]') || []);
-        
-        if (rows.length === 0) {
-            updateUI("ERROR", 0, "No table rows found.");
-            return;
-        }
-
-        for (let i = 1; i < rows.length; i++) {
-            const btn = rows[i].querySelector('button');
-            if (btn) {
-                updateUI("PROCESSING", window.capturedTracks.length, `Row ${i} / ${rows.length - 1}`);
-                rows[i].scrollIntoView({ block: 'center', behavior: 'smooth' });
-                
-                btn.click();
-                await waitForMetadata();
-
-                const audio = document.querySelector('audio');
-                const img = document.getElementById('track-song-image');
-                const src = audio?.currentSrc || audio?.src;
-
-                if (src && src.includes('stream')) {
-                    const info = img?.alt.split(' - ') || ["Unknown", "Unknown"];
-                    
-                    // Duplicate prevention
-                    if (!window.capturedTracks.find(t => t.location === src)) {
-                        window.capturedTracks.push({
-                            location: src,
-                            title: (info[1] || info[0]).trim(),
-                            creator: (info[0] || "Unknown Artist").trim(),
-                            duration: audio && !isNaN(audio.duration) ? Math.round(audio.duration * 1000) : 0
-                        });
-                        console.log(`%c 📥 Captured [v1.0.0]: ${info[1] || info[0]}`, "color: #00E676;");
-                    }
-                }
-            }
-        }
-        finish();
-    };
-
-    /**
-     * Export to XSPF file
-     */
-    const finish = () => {
-        // Skip the first track as per user workflow
-        const final = window.capturedTracks.slice(1);
-        
-        if (final.length === 0) {
-            updateUI("EMPTY", 0, "No tracks to export.");
-            return;
-        }
-
-        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        
-        let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n<title>${esc(playlistTitle)}</title>\n<trackList>`;
-        final.forEach(t => {
-            xml += `\n<track><location>${esc(t.location)}</location><title>${esc(t.title)}</title><creator>${esc(t.creator)}</creator><duration>${t.duration}</duration></track>`;
-        });
-        xml += `\n</trackList>\n</playlist>`;
-
-        const blob = new Blob([xml], { type: 'application/xspf+xml' });
-        const a = document.createElement('a');
-        const safeName = playlistTitle.replace(/[\\/:*?"<>|]/g, '_');
-        
-        a.href = URL.createObjectURL(blob);
-        a.download = `${safeName} [Squidify.org].xspf`;
-        a.click();
-        
-        updateUI("COMPLETED", final.length, "File downloaded.");
-        setTimeout(() => statusOverlay.remove(), 5000);
-    };
-
-    run();
+    console.log(`${TAG} ✅ ${songs.length} tracks exported to "${filename}".`);
 })();
