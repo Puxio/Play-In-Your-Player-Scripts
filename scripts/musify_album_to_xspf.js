@@ -1,5 +1,5 @@
 /**
- * XSPF Playlist Generator for Musify.club - v1.1.3
+ * XSPF Playlist Generator for Musify.club - v1.1.4
  *
  * This script is designed to run in the DevTools console of an Album/Playlist
  * page on musify.club. It extracts track details, fetches the real MP3 URL
@@ -13,9 +13,14 @@
  *    JSON `{ url, title, cover, trackUrl }` with a signed MP3 URL.
  *  - This script reproduces that call for every track. Calls are same-origin
  *    so there are no CORS issues. Signed URLs include an `expires` parameter,
- *    so the resulting XSPF is time-limited (typically valid for a few days).
+ *    so the resulting XSPF is time-limited (the signature lasts a few hours).
  *
  * Changelog:
+ *   1.1.4 (2026-10-16) - Fix the filename and album title when the album page
+ *                        byArtist element has no text (e.g. "_(1998) - Virgin
+ *                        Steele - Invictus"). The artist is now read from its
+ *                        content attribute or nested itemprop="name", then
+ *                        from the H1, then from the first track row.
  *   1.1.3 (2026-10-16) - Revert the query-string strip from 1.1.1. The
  *                        `expires` and `sig` parameters authenticate the
  *                        request on the Musify CDN; without them the server
@@ -86,10 +91,30 @@
     let albumImageUrl = null;
     let suggestedFilename = 'playlist.xspf';
 
+    // The byArtist element can carry the name as text, as a content attribute
+    // (<meta itemprop="byArtist" content="...">) or in a nested itemprop="name".
+    // Returns '' when no name is found, so the fallbacks below can run.
+    const readArtistName = (el) => {
+        if (!el) return '';
+        const nameEl = el.querySelector('[itemprop=name]');
+        const linkEl = el.querySelector('a');
+        const candidates = [
+            el.getAttribute('content'),
+            nameEl && (nameEl.getAttribute('content') || nameEl.textContent),
+            linkEl && linkEl.textContent,
+            el.textContent
+        ];
+        for (const c of candidates) {
+            if (c && c.trim()) return c.trim();
+        }
+        return '';
+    };
+
     // Extract Artist and Year (if on an album page)
     if (isAlbumPage) {
         const byArtistElement = document.querySelector(`${ALBUM_INFO_LIST_SELECTOR} [itemprop=byArtist]`);
-        if (byArtistElement) { albumArtist = byArtistElement.textContent.trim(); }
+        const byArtistName = readArtistName(byArtistElement);
+        if (byArtistName) { albumArtist = byArtistName; }
 
         const datePublishedElement = document.querySelector(`${ALBUM_INFO_LIST_SELECTOR} [itemprop=datePublished]`);
         if (datePublishedElement && datePublishedElement.hasAttribute('datetime')) {
@@ -109,6 +134,13 @@
             if (dashIdx > 0) {
                 albumArtist = potentialTitleText.substring(0, dashIdx).trim();
             }
+        }
+
+        // Last resort: the artist of the first track row
+        if (albumArtist === 'Unknown Artist') {
+            const firstRow = document.querySelector(TRACK_ITEM_SELECTOR);
+            const rowArtist = firstRow && firstRow.getAttribute(TRACK_ARTIST_ATTR);
+            if (rowArtist && rowArtist.trim()) { albumArtist = rowArtist.trim(); }
         }
 
         // If we have no year yet, try to derive it from "(YYYY)" in the H1
