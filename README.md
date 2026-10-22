@@ -1,6 +1,6 @@
 # Export playlist in .xspf and play them in your player
 
-Scripts that export Musify.club, KHinsider, Squidify and YouTube albums or playlists to .xspf playlists, so you can stream them in your favourite player (VLC, foobar2000, AIMP, PotPlayer, MPV...).
+Scripts that export Musify.club, KHInsider, Squidify, KHInsider-Squid and YouTube albums or playlists to .xspf playlists, so you can stream them in your favourite player (VLC, foobar2000, AIMP, PotPlayer, MPV...).
 
 Use them with one bookmarklet that recognises the site you are on, or paste them into the browser DevTools console.
 
@@ -9,7 +9,8 @@ Use them with one bookmarklet that recognises the site you are on, or paste them
 | Site | What you get | Script |
 |------|--------------|--------|
 | [Musify.club](https://musify.club/en) | Big catalogue, high quality music (320 kbps MP3) | `musify_album_to_xspf.js` |
-| [KHinsider](https://downloads.khinsider.com/) | Video game music, gamerips and more | `khinsider_album_to_xspf.js` |
+| [KHInsider](https://downloads.khinsider.com/) | Video game music, gamerips and more. Tries to fetch FLAC from khinsider.squid.wtf first; falls back to KHInsider MP3 links if the album is not there. | `khinsider_album_to_xspf.js` |
+| [KHInsider-Squid](https://khinsider.squid.wtf/) | KHInsider mirror with higher quality files (typically FLAC) | `squidify_abum_to_xspf.js` |
 | [Squidify.org](https://www.squidify.org/) | Music of modern video games in HD (FLAC) | `squidify_abum_to_xspf.js` |
 | [YouTube](https://youtube.com/) | Albums and playlists, read directly from YouTube | `youtube_album_to_playlist.js` |
 
@@ -25,12 +26,12 @@ One bookmark works on every supported site and always runs the latest version of
 4. Paste this as the URL and save:
 
 ```
-javascript:!function(){var t="Puxio/Play-In-Your-Player-Scripts",e="https://raw.githubusercontent.com/"+t+"/main/scripts/",n="https://cdn.jsdelivr.net/gh/"+t+"@main/scripts/",o={"musify.club":"musify_album_to_xspf.js","khinsider.com":"khinsider_album_to_xspf.js","squidify.org":"squidify_abum_to_xspf.js","youtube.com":"youtube_album_to_playlist.js"},i="Play-In-Your-Player: ",r="open the console (F12), paste it and press Enter.",c=location.hostname.replace(/^www\./,"");function s(t){return fetch(e+t+"?_="+Date.now(),{cache:"no-store"}).then((function(e){if(!e.ok)throw new Error(t+" HTTP "+e.status);return e.text()}))}function a(t){for(var e in t)if(c===e||c.slice(-e.length-1)==="."+e)return t[e];return null}function l(t){window.open(e+t,"_blank")?alert(i+"this site blocks loading scripts.\nThe script ("+t+") has been opened in a new tab: select all (Ctrl+A), copy it (Ctrl+C), come back to this page, "+r):prompt(i+"this site blocks loading scripts.\nOpen this URL, copy the script, come back to this page and "+r,e+t)}s("manifest.json").then((function(t){var e=a(JSON.parse(t));if(e)return s(e).then((function(t){window.__pippRan=!1;try{var n=document.createElement("script");n.textContent="window.__pippRan=true;\n"+t,(document.head||document.documentElement).appendChild(n),n.remove()}catch(t){}window.__pippRan||function(t,e){var n=i+"this site blocks injected scripts.\n";navigator.clipboard?navigator.clipboard.writeText(e).then((function(){alert(n+"The script ("+t+") has been copied to the clipboard: "+r)}),(function(){l(t)})):l(t)}(e,t)}));alert(i+"no script registered for "+c+".")})).catch((function(t){t instanceof TypeError?function(){var t=a(o);if(t)try{var e=document.createElement("script");e.onerror=function(){e.remove(),l(t)},e.onload=function(){e.remove()},e.src=n+t,(document.head||document.documentElement).appendChild(e)}catch(e){l(t)}else alert(i+"this site blocks downloads from GitHub and "+c+" is not in the fallback list.")}():alert(i+"could not load the scripts ("+t.message+").")}))}();
+javascript:!function(){var t="Puxio/Play-In-Your-Player-Scripts",e="https://raw.githubusercontent.com/"+t+"/main/scripts/",n="https://cdn.jsdelivr.net/gh/"+t+"@main/scripts/",o={"musify.club":"musify_album_to_xspf.js","khinsider.com":"khinsider_album_to_xspf.js","squid.wtf":"squidify_abum_to_xspf.js","squidify.org":"squidify_abum_to_xspf.js","youtube.com":"youtube_album_to_playlist.js"},i="Play-In-Your-Player: ",r="open the console (F12), paste it and press Enter.",s=location.hostname.replace(/^www\./,"");function c(t){return fetch(e+t+"?_="+Date.now(),{cache:"no-store"}).then(function(e){if(!e.ok)throw new Error(t+" HTTP "+e.status);return e.text()})}function a(t){for(var e in t)if(s===e||s.slice(-e.length-1)==="."+e)return t[e];return null}function u(t){window.open(e+t,"_blank")?alert(i+"this site blocks loading scripts.\nThe script ("+t+") has been opened in a new tab: select all (Ctrl+A), copy it (Ctrl+C), come back to this page, "+r):prompt(i+"this site blocks loading scripts.\nOpen this URL, copy the script, come back to this page and "+r,e+t)}c("manifest.json").then(function(t){var e=a(JSON.parse(t));if(e)return c(e).then(function(t){window.__pippRan=!1;try{var n=document.createElement("script");n.textContent="window.__pippRan=true;\n"+t,(document.head||document.documentElement).appendChild(n),n.remove()}catch(t){}window.__pippRan||function(t,e){var n=i+"this site blocks injected scripts.\n";navigator.clipboard?navigator.clipboard.writeText(e).then(function(){alert(n+"The script ("+t+") has been copied to the clipboard: "+r)},function(){u(t)}):u(t)}(e,t)});alert(i+"no script registered for "+s+".")}).catch(function(t){t instanceof TypeError?function(){var t=a(o);if(t)try{var e=document.createElement("script");e.onerror=function(){e.remove(),u(t)},e.onload=function(){e.remove()},e.src=n+t,(document.head||document.documentElement).appendChild(e)}catch(e){u(t)}else alert(i+"this site blocks downloads from GitHub and "+s+" is not in the fallback list.")}():alert(i+"could not load the scripts ("+t.message+").")})}();
 ```
 
 The same line is in [`bookmarklet/bookmarklet.txt`](bookmarklet/bookmarklet.txt). GitHub does not allow `javascript:` links, so it has to be copied and pasted rather than dragged.
 
-Current bookmarklet version: 1.1.2. If you installed an older one, replace its URL with the line above.
+Current bookmarklet version: 1.1.3. If you installed an older one, replace its URL with the line above.
 
 ### Use
 

@@ -1,20 +1,26 @@
 /**
- * Squidify.org XSPF Playlist Generator - v2.0.0
+ * Subsonic XSPF Playlist Generator - v3.0.0
  *
- * Run in the DevTools console on an album or playlist page of
- * www.squidify.org. It builds an XSPF playlist and downloads it.
+ * Run in the DevTools console on an album or playlist page of any supported
+ * Subsonic-compatible site:
+ *   - www.squidify.org
+ *   - khinsider.squid.wtf
  *
- * Squidify is a Subsonic compatible music server. The page loads its cover
- * art from /rest/getCoverArt with the guest credentials it uses for every
- * visitor (u, t, s, v, c). The script reuses those same parameters to ask
- * the Subsonic API for the track list (getAlbum / getPlaylist) and writes a
- * /rest/stream URL for each track, which streams the original file (FLAC).
- * Subsonic token authentication does not expire on its own, so the XSPF
- * keeps working until the site changes its guest credentials.
+ * Both sites load cover art from /rest/getCoverArt with the guest credentials
+ * they use for every visitor (u, t, s, v, c). The script reuses those same
+ * parameters to ask the Subsonic API for the track list (getAlbum /
+ * getPlaylist) and writes a /rest/stream URL for each track, which streams
+ * the original file (typically FLAC). Subsonic token authentication does not
+ * expire on its own, so the XSPF keeps working until the site changes its
+ * guest credentials.
  *
  * Calls are same-origin, so they are allowed by the site's security policy.
  *
  * Changelog:
+ *   3.0.0 (2026-10-22) - Unified script: supports squidify.org and
+ *                        khinsider.squid.wtf. Filename tag reflects the
+ *                        source site. Renamed from "Squidify.org XSPF
+ *                        Playlist Generator".
  *   2.0.0 (2026-10-16) - Rewritten for the new Squidify site (Svelte). The
  *                        [role=table] track list no longer exists; tracks
  *                        now come from the Subsonic API instead of clicking
@@ -25,9 +31,22 @@
 (async function () {
     'use strict';
 
-    const TAG = '[Squidify XSPF]';
+    const TAG = '[Subsonic XSPF]';
     const DEFAULT_API_VERSION = '1.16.1';
     const DEFAULT_CLIENT = 'play-in-your-player';
+
+    // Filename tag per site
+    const SITE_TAGS = {
+        'squidify.org': 'Squidify',
+        'squid.wtf': 'KHInsider-Squid',
+    };
+    const host = location.hostname.replace(/^www\./, '');
+    const siteTag = (function () {
+        for (const key in SITE_TAGS) {
+            if (host === key || host.slice(-key.length - 1) === '.' + key) return SITE_TAGS[key];
+        }
+        return host;
+    })();
 
     const esc = (s) => String(s === null || s === undefined ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -118,7 +137,7 @@
     }
 
     // --- 3. Build the XSPF ---
-    const title = info.name || (document.querySelector('h1') || {}).innerText || 'Squidify Playlist';
+    const title = info.name || (document.querySelector('h1') || {}).innerText || `${siteTag} Playlist`;
     const streamUrl = (songId) => {
         const query = new URLSearchParams(auth);
         query.set('id', songId);
@@ -145,7 +164,7 @@
     xspf += `  <trackList>\n${trackXml.join('\n')}\n  </trackList>\n</playlist>`;
 
     // --- 4. Download ---
-    const filename = `${title} [Squidify.org].xspf`.replace(/[\\/:*?"<>|]/g, '_');
+    const filename = `${title} [${siteTag}].xspf`.replace(/[\\/:*?"<>|]/g, '_');
     const blob = new Blob([xspf], { type: 'application/xspf+xml' });
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
