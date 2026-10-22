@@ -1,22 +1,21 @@
 /**
- * Subsonic XSPF Playlist Generator - v3.0.0
+ * Squidify XSPF Playlist Generator - v3.2.0
  *
- * Run in the DevTools console on an album or playlist page of any supported
- * Subsonic-compatible site:
+ * Run in the DevTools console on an album or playlist page of:
  *   - www.squidify.org
- *   - khinsider.squid.wtf
  *
- * Both sites load cover art from /rest/getCoverArt with the guest credentials
- * they use for every visitor (u, t, s, v, c). The script reuses those same
- * parameters to ask the Subsonic API for the track list (getAlbum /
- * getPlaylist) and writes a /rest/stream URL for each track, which streams
- * the original file (typically FLAC). Subsonic token authentication does not
- * expire on its own, so the XSPF keeps working until the site changes its
- * guest credentials.
+ * Squidify loads cover art from /rest/getCoverArt with guest Subsonic
+ * credentials (u, t, s, v, c). The script reuses those parameters to call
+ * the Subsonic API for the track list and writes /rest/stream URLs for each
+ * track (typically FLAC). Subsonic token authentication does not expire on
+ * its own, so the XSPF keeps working until the site changes its credentials.
  *
- * Calls are same-origin, so they are allowed by the site's security policy.
+ * Note: khinsider.squid.wtf is a different site (Next.js, not Subsonic).
+ * Use khinsider_squid_to_xspf.js for that site instead.
  *
  * Changelog:
+ *   3.2.0 (2026-10-22) - Scope narrowed to squidify.org only. khinsider.squid.wtf
+ *                        is not Subsonic and is handled by its own script.
  *   3.1.0 (2026-10-22) - Wait up to 10 s for the cover art to appear in
  *                        the DOM (SPA pages render it asynchronously).
  *                        Added startup log so the user sees the script ran.
@@ -34,22 +33,10 @@
 (async function () {
     'use strict';
 
-    const TAG = '[Subsonic XSPF]';
+    const TAG = '[Squidify XSPF]';
     const DEFAULT_API_VERSION = '1.16.1';
     const DEFAULT_CLIENT = 'play-in-your-player';
-
-    // Filename tag per site
-    const SITE_TAGS = {
-        'squidify.org': 'Squidify',
-        'squid.wtf': 'KHInsider-Squid',
-    };
-    const host = location.hostname.replace(/^www\./, '');
-    const siteTag = (function () {
-        for (const key in SITE_TAGS) {
-            if (host === key || host.slice(-key.length - 1) === '.' + key) return SITE_TAGS[key];
-        }
-        return host;
-    })();
+    const siteTag = 'Squidify';
 
     const esc = (s) => String(s === null || s === undefined ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

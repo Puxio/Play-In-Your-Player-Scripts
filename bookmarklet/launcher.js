@@ -1,5 +1,5 @@
 /**
- * Play-In-Your-Player bookmarklet launcher - v1.1.2
+ * Play-In-Your-Player bookmarklet launcher - v1.1.4
  *
  * One bookmark for every supported site. When clicked, it:
  *   1. reads the current hostname (www. is ignored, subdomains match their
@@ -34,7 +34,9 @@
  *   npx terser bookmarklet/launcher.js -c -m | sed 's/^/javascript:/' > bookmarklet/bookmarklet.txt
  *
  * Changelog:
- *   1.1.3 (2026-10-22) - FALLBACK map: squid.wtf now runs squidify_abum_to_xspf.js
+ *   1.1.4 (2026-10-22) - FALLBACK map: squid.wtf now runs khinsider_squid_to_xspf.js
+ *                        (Next.js proxy script, replaces incorrect Subsonic script).
+ *   1.1.3 (2026-10-22) - FALLBACK map: squid.wtf runs squidify_abum_to_xspf.js
  *                        (unified Subsonic script). khinsider_squid_to_xspf.js removed.
  *   1.1.2 (2026-10-16) - FALLBACK map: removed the Invidious instances.
  *   1.1.1 (2026-10-16) - FALLBACK map: youtube.com runs the YouTube script
@@ -50,7 +52,7 @@
     var FALLBACK = {
         'musify.club': 'musify_album_to_xspf.js',
         'khinsider.com': 'khinsider_album_to_xspf.js',
-        'squid.wtf': 'squidify_abum_to_xspf.js',
+        'squid.wtf': 'khinsider_squid_to_xspf.js',
         'squidify.org': 'squidify_abum_to_xspf.js',
         'youtube.com': 'youtube_album_to_playlist.js'
     };
