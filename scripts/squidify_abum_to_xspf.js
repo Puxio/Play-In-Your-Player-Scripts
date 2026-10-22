@@ -17,6 +17,9 @@
  * Calls are same-origin, so they are allowed by the site's security policy.
  *
  * Changelog:
+ *   3.1.0 (2026-10-22) - Wait up to 10 s for the cover art to appear in
+ *                        the DOM (SPA pages render it asynchronously).
+ *                        Added startup log so the user sees the script ran.
  *   3.0.0 (2026-10-22) - Unified script: supports squidify.org and
  *                        khinsider.squid.wtf. Filename tag reflects the
  *                        source site. Renamed from "Squidify.org XSPF
@@ -52,10 +55,28 @@
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
+    // Poll for a DOM element matching a selector, up to timeoutMs.
+    const waitFor = (selector, timeoutMs = 10000) => new Promise((resolve, reject) => {
+        const el = document.querySelector(selector);
+        if (el) { resolve(el); return; }
+        const observer = new MutationObserver(() => {
+            const found = document.querySelector(selector);
+            if (found) { observer.disconnect(); clearTimeout(timer); resolve(found); }
+        });
+        const timer = setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Timed out waiting for "${selector}" after ${timeoutMs}ms`));
+        }, timeoutMs);
+        observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+    });
+
     // --- 1. Guest credentials, taken from the cover art URL on the page ---
-    const coverImg = document.querySelector('img[src*="/rest/getCoverArt"]');
-    if (!coverImg) {
-        console.error(`${TAG} ❌ Cover art not found. Open an album or playlist page and wait for it to load.`);
+    console.log(`${TAG} Starting — waiting for cover art...`);
+    let coverImg;
+    try {
+        coverImg = await waitFor('img[src*="/rest/getCoverArt"]', 10000);
+    } catch (e) {
+        console.error(`${TAG} ❌ Cover art not found after 10 s. Make sure you are on an album or playlist page and the page has fully loaded.`);
         return;
     }
     const coverUrl = new URL(coverImg.src, location.href);
