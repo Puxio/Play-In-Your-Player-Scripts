@@ -16,7 +16,7 @@ Use them with one bookmarklet that recognises the site you are on, or paste them
 
 ## Quick start: the 'Play In My Player' bookmarklet
 
-One bookmark that use play-in-your-player scripts to let you 'Play In My Player' playlists. Works on every supported site and always runs the latest version of the scripts in this repository.
+One bookmark that uses play-in-your-player scripts to let you 'Play In My Player' playlists. Works on every supported site and always runs the latest version of the scripts in this repository.
 
 ### Install
 
