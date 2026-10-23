@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play In My Player</title>
+<meta name="description" content="One bookmark that exports albums and playlists from music sites to .xspf, ready for VLC, foobar2000, AIMP and more.">
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --text: #1d1d1f; --muted: #5f6368; --line: #e3e1dc;
+    --accent: #e8590c; --accent-text: #ffffff; --code-bg: #f0eee9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416; --card: #1d1d20; --text: #ececec; --muted: #a0a0a6; --line: #2e2e33;
+      --accent: #ff7a33; --accent-text: #141416; --code-bg: #26262a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.15rem; margin: 40px 0 12px; }
+  p { margin: 0 0 12px; }
+  .lead { color: var(--muted); font-size: 1.05rem; margin-bottom: 32px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px;
+  }
+  .drag-zone { text-align: center; }
+  .bookmarklet {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 24px; border-radius: 999px; background: var(--accent); color: var(--accent-text);
+    font-weight: 600; font-size: 1.05rem; text-decoration: none; cursor: grab;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15); transition: transform .15s ease;
+  }
+  .bookmarklet::before { content: "\25B6"; font-size: .8em; }
+  .bookmarklet:hover { transform: translateY(-1px); }
+  .bookmarklet:active { cursor: grabbing; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 14px 0 0; }
+  .hint.warn { color: var(--accent); font-weight: 600; }
+  ol { padding-left: 1.3em; margin: 0; }
+  li { margin-bottom: 6px; }
+  kbd {
+    font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 6px;
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--code-bg);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; }
+  tr:last-child td { border-bottom: 0; }
+  a { color: var(--accent); }
+  textarea {
+    width: 100%; height: 96px; resize: vertical; padding: 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--code-bg); color: var(--text);
+    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  button {
+    margin-top: 10px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  footer { margin-top: 48px; color: var(--muted); font-size: .85rem; }
+  @media (max-width: 480px) { th:nth-child(2), td:nth-child(2) { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Play In My Player</h1>
+  <p class="lead">One bookmark that turns an album or playlist page into an .xspf playlist for VLC, foobar2000, AIMP, PotPlayer, MPV and other players.</p>
+
+  <div class="card drag-zone">
+    <a class="bookmarklet" id="bookmarklet" href="{{HREF}}" title="Drag me to your bookmarks bar">Play In My Player v{{VERSION}}</a>
+    <p class="hint" id="hint">Drag this button to your bookmarks bar.</p>
+  </div>
+
+  <h2>Install</h2>
+  <ol>
+    <li>Show the bookmarks bar: <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> on Mac).</li>
+    <li>Drag the orange button onto the bar. The bookmark is named with its version, so you can always see which one you have.</li>
+    <li>Updating from an older version? Delete the old bookmark and drag the new one.</li>
+  </ol>
+
+  <h2>Use</h2>
+  <p>Open an album or playlist page on a supported site and click the bookmark. The .xspf file downloads automatically: open it with your player.</p>
+  <p>The scripts for each site are loaded fresh from GitHub on every click, so fixes reach you without reinstalling. The bookmark itself only needs replacing when a notice in the page corner tells you a new version is out.</p>
+
+  <h2>Supported sites</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Site</th><th>What you get</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://musify.club/en">Musify.club</a></td><td>Big catalogue, 320 kbps MP3</td></tr>
+        <tr><td><a href="https://downloads.khinsider.com/">KHInsider</a></td><td>Video game music; FLAC from khinsider.squid.wtf when available, MP3 otherwise</td></tr>
+        <tr><td><a href="https://khinsider.squid.wtf/">KHInsider-Squid</a></td><td>KHInsider mirror, typically FLAC</td></tr>
+        <tr><td><a href="https://www.squidify.org/">Squidify.org</a></td><td>Modern video game music in FLAC</td></tr>
+        <tr><td><a href="https://youtube.com/">YouTube</a></td><td>Albums and playlists (needs a YouTube capable player)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Can't drag?</h2>
+  <p>On mobile or in some browsers, create a bookmark to any page, edit it, and paste this as its URL:</p>
+  <textarea id="code" readonly>{{CODE}}</textarea>
+  <button type="button" id="copy">Copy</button>
+
+  <footer>
+    v{{VERSION}} &middot; Source and manual console use: <a href="https://github.com/Puxio/Play-In-Your-Player-Scripts">GitHub</a> &middot; Public domain
+  </footer>
+</main>
+<script>
+  // Clicking the button here would run the bookmarklet on this page: explain instead.
+  document.getElementById('bookmarklet').addEventListener('click', function (e) {
+    e.preventDefault();
+    var hint = document.getElementById('hint');
+    hint.textContent = 'Don’t click it here: drag it to your bookmarks bar, then click it on a music site.';
+    hint.className = 'hint warn';
+  });
+  document.getElementById('copy').addEventListener('click', function () {
+    var box = document.getElementById('code');
+    var btn = this;
+    var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 2000); };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(box.value).then(done, function () { box.select(); document.execCommand('copy'); done(); });
+    } else {
+      box.select(); document.execCommand('copy'); done();
+    }
+  });
+</script>
+</body>
+</html>

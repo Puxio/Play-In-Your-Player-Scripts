@@ -1,5 +1,5 @@
 /**
- * Play-In-Your-Player bookmarklet launcher - v1.1.4
+ * Play-In-Your-Player bookmarklet launcher
  *
  * One bookmark for every supported site. When clicked, it:
  *   1. reads the current hostname (www. is ignored, subdomains match their
@@ -7,7 +7,13 @@
  *   2. downloads scripts/manifest.json from this repository and looks up the
  *      script registered for that hostname;
  *   3. downloads that script and runs it in the page, exactly as if it had
- *      been pasted into the DevTools console.
+ *      been pasted into the DevTools console;
+ *   4. reads the VERSION line of this file on GitHub and, if a newer
+ *      launcher exists, shows a small notice linking to the install page.
+ *
+ * VERSION below is the single source of truth: the install page, the
+ * bookmark name ("Play In My Player vX.Y.Z") and the update check all read
+ * it. Bump it whenever this file changes.
  *
  * Files are read from raw.githubusercontent.com, whose cache lasts about
  * 5 minutes, so a commit pushed to main reaches the bookmarklet almost
@@ -28,16 +34,16 @@
  *   below. Keep it in sync with scripts/manifest.json; a site missing from
  *   it only loses this fallback, not the normal path.
  *
- * This file is the readable source. The one-line version to save as a
- * bookmark is bookmarklet/bookmarklet.txt (also shown in the README).
- * After editing this file, regenerate it with:
- *   npx terser bookmarklet/launcher.js -c -m | sed 's/^/javascript:/' > bookmarklet/bookmarklet.txt
+ * This file is the readable source. The install page and
+ * bookmarklet/bookmarklet.txt are generated from it by tools/build.mjs
+ * (run "node tools/build.mjs" after editing; the GitHub Action does the
+ * same on every push to publish the page).
  *
  * Changelog:
- *   1.1.4 (2026-10-22) - FALLBACK map: squid.wtf now runs khinsider_squid_to_xspf.js
- *                        (Next.js proxy script, replaces incorrect Subsonic script).
- *   1.1.3 (2026-10-22) - FALLBACK map: squid.wtf runs squidify_abum_to_xspf.js
- *                        (unified Subsonic script). khinsider_squid_to_xspf.js removed.
+ *   1.2.0 (2026-10-23) - VERSION constant and update notice. Installed from
+ *                        the GitHub Pages install page by drag and drop.
+ *   1.1.4 (2026-10-22) - FALLBACK map: squid.wtf runs khinsider_squid_to_xspf.js.
+ *   1.1.3 (2026-10-22) - FALLBACK map: squid.wtf runs squidify_abum_to_xspf.js.
  *   1.1.2 (2026-10-16) - FALLBACK map: removed the Invidious instances.
  *   1.1.1 (2026-10-16) - FALLBACK map: youtube.com runs the YouTube script
  *                        directly (the Invidious redirect is no longer used).
@@ -46,9 +52,11 @@
  *   1.0.0 (2026-10-16) - Initial release.
  */
 (function () {
+    var VERSION = '1.2.0';
     var REPO = 'Puxio/Play-In-Your-Player-Scripts';
-    var RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/scripts/';
+    var BASE = 'https://raw.githubusercontent.com/' + REPO + '/main/';
     var CDN = 'https://cdn.jsdelivr.net/gh/' + REPO + '@main/scripts/';
+    var PAGE = 'https://puxio.github.io/Play-In-Your-Player-Scripts/';
     var FALLBACK = {
         'musify.club': 'musify_album_to_xspf.js',
         'khinsider.com': 'khinsider_album_to_xspf.js',
@@ -61,9 +69,9 @@
     var host = location.hostname.replace(/^www\./, '');
 
     // Fetch a repository file as text, bypassing the browser cache.
-    function get(file) {
-        return fetch(RAW + file + '?_=' + Date.now(), { cache: 'no-store' }).then(function (r) {
-            if (!r.ok) throw new Error(file + ' HTTP ' + r.status);
+    function get(path) {
+        return fetch(BASE + path + '?_=' + Date.now(), { cache: 'no-store' }).then(function (r) {
+            if (!r.ok) throw new Error(path + ' HTTP ' + r.status);
             return r.text();
         });
     }
@@ -76,12 +84,50 @@
         return null;
     }
 
+    // True when version string a is greater than b ("1.10.0" > "1.9.2").
+    function newer(a, b) {
+        a = a.split('.');
+        b = b.split('.');
+        for (var i = 0; i < 3; i++) {
+            var d = (+a[i] || 0) - (+b[i] || 0);
+            if (d) return d > 0;
+        }
+        return false;
+    }
+
+    // Small dismissable banner in the corner of the page.
+    function notice(latest) {
+        var box = document.createElement('div');
+        box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:320px;' +
+            'padding:12px 14px;border-radius:8px;background:#1d1d1f;color:#fff;font:14px/1.4 system-ui,sans-serif;' +
+            'box-shadow:0 4px 16px rgba(0,0,0,.3)';
+        box.textContent = 'Play In My Player v' + latest + ' is available (you have v' + VERSION + '). ';
+        var link = document.createElement('a');
+        link.href = PAGE;
+        link.target = '_blank';
+        link.textContent = 'Update the bookmark';
+        link.style.cssText = 'color:#8ab4ff;text-decoration:underline';
+        box.appendChild(link);
+        box.onclick = function (e) { if (e.target !== link) box.remove(); };
+        (document.body || document.documentElement).appendChild(box);
+        setTimeout(function () { box.remove(); }, 15000);
+    }
+
+    // Compare this launcher with the one on GitHub. Never blocks or fails.
+    function checkUpdate() {
+        get('bookmarklet/launcher.js').then(function (text) {
+            var m = text.match(/VERSION = '([\d.]+)'/);
+            if (m && newer(m[1], VERSION)) notice(m[1]);
+        }).catch(function () {});
+    }
+
     // Last resort: show the script in a new tab for a manual copy and paste.
     function openTab(file) {
-        if (window.open(RAW + file, '_blank')) {
+        var url = BASE + 'scripts/' + file;
+        if (window.open(url, '_blank')) {
             alert(TAG + 'this site blocks loading scripts.\nThe script (' + file + ') has been opened in a new tab: select all (Ctrl+A), copy it (Ctrl+C), come back to this page, ' + PASTE);
         } else {
-            prompt(TAG + 'this site blocks loading scripts.\nOpen this URL, copy the script, come back to this page and ' + PASTE, RAW + file);
+            prompt(TAG + 'this site blocks loading scripts.\nOpen this URL, copy the script, come back to this page and ' + PASTE, url);
         }
     }
 
@@ -116,13 +162,14 @@
         }
     }
 
-    get('manifest.json').then(function (text) {
+    get('scripts/manifest.json').then(function (text) {
+        checkUpdate();
         var file = lookup(JSON.parse(text));
         if (!file) {
             alert(TAG + 'no script registered for ' + host + '.');
             return;
         }
-        return get(file).then(function (code) {
+        return get('scripts/' + file).then(function (code) {
             window.__pippRan = false;
             try {
                 var s = document.createElement('script');
