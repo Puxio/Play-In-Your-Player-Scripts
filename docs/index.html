@@ -25,7 +25,8 @@
   h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
   h2 { font-size: 1.15rem; margin: 40px 0 12px; }
   p { margin: 0 0 12px; }
-  .lead { color: var(--muted); font-size: 1.05rem; margin-bottom: 32px; }
+  .lead { color: var(--muted); font-size: 1.05rem; margin-bottom: 8px; }
+  .repo { color: var(--muted); font-size: .9rem; margin-bottom: 32px; }
   .card {
     background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px;
   }
@@ -70,6 +71,7 @@
 <main>
   <h1>Play In My Player</h1>
   <p class="lead">One bookmark that turns an album or playlist page into an .xspf playlist for VLC, foobar2000, AIMP, PotPlayer, MPV and other players.</p>
+  <p class="repo">The bookmarklet of <a href="https://github.com/Puxio/Play-In-Your-Player-Scripts">Play-In-Your-Player-Scripts</a> on GitHub.</p>
 
   <div class="card drag-zone">
     <a class="bookmarklet" id="bookmarklet" href="{{HREF}}" title="Drag me to your bookmarks bar">Play In My Player v{{VERSION}}</a>
@@ -107,7 +109,7 @@
   <button type="button" id="copy">Copy</button>
 
   <footer>
-    v{{VERSION}} &middot; Source and manual console use: <a href="https://github.com/Puxio/Play-In-Your-Player-Scripts">GitHub</a> &middot; Public domain
+    v{{VERSION}} &middot; Source and manual console use: <a href="https://github.com/Puxio/Play-In-Your-Player-Scripts">Puxio/Play-In-Your-Player-Scripts</a> &middot; Public domain
   </footer>
 </main>
 <script>
