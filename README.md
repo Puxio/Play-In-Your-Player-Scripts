@@ -32,7 +32,7 @@ The site scripts are downloaded from this repository on every click, so fixes re
 
 ### Use
 
-Open an album or playlist page on a supported site and click the bookmark. The .xspf file downloads automatically; open it with your player.
+Open an album or playlist page on a supported site and click the bookmark. The .xspf file downloads automatically; open it with your player. A small panel in the top right corner of the page shows the progress and, if something goes wrong, the reason.
 
 On YouTube, open the playlist or album page (or a video played from a playlist, with `&list=` in the URL) and click the bookmark. If YouTube blocks the injected script, the bookmarklet copies it to the clipboard instead: paste it into the console. The first time, Chrome asks you to type `allow pasting` before it accepts pasted code.
 
