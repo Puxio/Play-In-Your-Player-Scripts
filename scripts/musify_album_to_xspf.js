@@ -1,5 +1,5 @@
 /**
- * XSPF Playlist Generator for Musify.club - v1.1.4
+ * XSPF Playlist Generator for Musify.club - v1.1.5
  *
  * This script is designed to run in the DevTools console of an Album/Playlist
  * page on musify.club. It extracts track details, fetches the real MP3 URL
@@ -16,6 +16,10 @@
  *    so the resulting XSPF is time-limited (the signature lasts a few hours).
  *
  * Changelog:
+ *   1.1.5 (2026-10-23) - Ignore the "Popular tracks by <artist>" rows in the
+ *                        sidebar, which use the same .playlist__item markup and
+ *                        ended up appended to the playlist. Rows with a track id
+ *                        already seen are skipped too.
  *   1.1.4 (2026-10-16) - Fix the filename and album title when the album page
  *                        byArtist element has no text (e.g. "_(1998) - Virgin
  *                        Steele - Invictus"). The artist is now read from its
@@ -39,6 +43,8 @@
 
     // --- Configuration & Selectors ---
     const TRACK_ITEM_SELECTOR = '.playlist__item';
+    // Sidebars hold extra track widgets ("Popular tracks by <artist>").
+    const SIDEBAR_SELECTOR = 'aside, .left-sidebar, .right-sidebar';
     // The track id is on the row itself: `data-track-id` (also `id="playerDiv{id}"` and `data-song-id`).
     const TRACK_ID_ATTR = 'data-track-id';
     const STREAM_URL_ENDPOINT = (id) => `/api/track/${id}/stream-url`;
@@ -200,7 +206,21 @@
 
 
     // --- Core Playlist Item Processing ---
-    const allPlaylistItems = document.querySelectorAll(TRACK_ITEM_SELECTOR);
+    // The sidebar ("Popular tracks by <artist>") uses the same row markup as the
+    // album track list: keep only rows outside it, and never the same track twice.
+    const pageRows = Array.from(document.querySelectorAll(TRACK_ITEM_SELECTOR));
+    const mainRows = pageRows.filter((row) => !row.closest(SIDEBAR_SELECTOR));
+    const seenIds = new Set();
+    const allPlaylistItems = (mainRows.length > 0 ? mainRows : pageRows).filter((row) => {
+        const id = row.getAttribute(TRACK_ID_ATTR) || row.getAttribute('data-song-id');
+        if (!id) return true;
+        if (seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+    });
+    if (allPlaylistItems.length < pageRows.length) {
+        console.log(`Ignored ${pageRows.length - allPlaylistItems.length} rows outside the track list (sidebar or duplicates).`);
+    }
     console.log(`--- Starting XSPF Playlist Extraction for ${allPlaylistItems.length} items ---`);
 
     if (allPlaylistItems.length === 0) {
