@@ -1,226 +1,185 @@
 /**
- * KHInsider XSPF Playlist Generator - v4.1.0
+ * KHInsider XSPF Playlist Generator - v5.0.0
  *
  * Run in the DevTools console on a KHInsider album page
  * (downloads.khinsider.com/game-soundtracks/album/...).
  *
- * Strategy:
- *   1. Try to fetch the same album from khinsider.squid.wtf via its
- *      /api/album and /api/download proxy endpoints. These return direct CDN
- *      links on vgmtreasurechest.com, typically including FLAC files at
- *      higher quality than the classic KHInsider MP3 links.
- *   2. If the album is not available there (or any step fails), fall back to
- *      the classic KHInsider method: visit each track page on
- *      downloads.khinsider.com and extract the direct CDN link.
+ * Every track has its own page on KHInsider with one direct link per format
+ * the album offers ("Click here to download as MP3", "... as FLAC"), all on
+ * the vgmtreasurechest.com CDN. The script visits each track page and keeps
+ * the best format available: FLAC when the album has it, otherwise MP3.
+ *
+ * khinsider.squid.wtf serves the same files: its server reads these same
+ * track pages. Its API cannot be used from downloads.khinsider.com (the
+ * browser blocks cross-origin calls), and it is not needed here.
  *
  * Changelog:
- *   4.1.0 (2026-10-22) - Fixed squid.wtf strategy: khinsider.squid.wtf is a
- *                        Next.js proxy (not Subsonic). Uses /api/album and
- *                        /api/download endpoints to fetch FLAC links.
- *   4.0.0 (2026-10-22) - Added squid.wtf FLAC-first strategy (incorrect
- *                        Subsonic approach, now replaced).
- *   3.3   (prior)      - Classic per-track extraction only.
+ *   5.0.0 (2026-10-23) - FLAC links read directly from the KHInsider track
+ *                        pages, which list every format. The squid.wtf
+ *                        strategy is removed: its API calls failed from this
+ *                        site (cross-origin), so every export fell back to
+ *                        MP3. Track pages are fetched 3 at a time, with one
+ *                        retry each.
+ *   4.1.0 (2026-10-22) - squid.wtf strategy via /api/album and /api/download.
+ *   4.0.0 (2026-10-22) - squid.wtf strategy via the Subsonic API (incorrect).
+ *   3.3   (prior)      - Classic per-track extraction, MP3 only.
  */
 (async function () {
     'use strict';
 
     const TAG = '[KHInsider XSPF]';
-    const SQUID_ORIGIN = 'https://khinsider.squid.wtf';
-    const KHINSIDER_ORIGIN = 'https://downloads.khinsider.com';
+    // Formats in order of preference, best first.
+    const FORMATS = ['flac', 'wav', 'mp3', 'm4a', 'ogg', 'opus', 'aac'];
+    const CONCURRENCY = 3;
 
     const esc = (s) => String(s === null || s === undefined ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
-    const durationMs = (str) => {
-        if (!str) return 0;
-        const parts = str.split(':').map(Number);
+    // File extension of a URL ("flac", "mp3", ...), or '' when it has none.
+    const formatOf = (url) => {
+        try {
+            const m = new URL(url).pathname.match(/\.([a-z0-9]+)$/i);
+            return m ? m[1].toLowerCase() : '';
+        } catch (e) {
+            return '';
+        }
+    };
+
+    // "M:SS" or "H:MM:SS" to milliseconds, 0 when absent.
+    const toMs = (text) => {
+        const parts = (text || '').trim().split(':').map(Number);
+        if (parts.some(isNaN)) return 0;
         if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
         if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
         return 0;
     };
 
-    const downloadXspf = (xspf, filename) => {
-        const blob = new Blob([xspf], { type: 'application/xspf+xml' });
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    // --- 1. Album and track rows ---
+    const playlistTable = document.getElementById('songlist');
+    if (!playlistTable) {
+        console.error(`${TAG} ❌ Table #songlist not found. Open a KHInsider album page.`);
+        return;
+    }
+
+    const albumTitle = document.querySelector('h2')?.innerText.trim() || 'Unknown Album';
+    const albumImageAnchor = document.querySelector('.albumImage a');
+    const albumImageUrl = albumImageAnchor ? albumImageAnchor.href : '';
+
+    // A row links to its track page several times (title, time, sizes, download
+    // icon): the title link is the one whose text is not an icon, time or size.
+    const isTitleLink = (a) => {
+        const text = a.innerText.trim();
+        return text !== '' && !a.querySelector('i, .material-icons')
+            && !/^\d+:\d{2}(:\d{2})?$/.test(text) && !/^[\d.,]+\s*[KMG]B$/i.test(text);
     };
 
-    // -------------------------------------------------------------------------
-    // Strategy 1: khinsider.squid.wtf proxy (FLAC quality)
-    // -------------------------------------------------------------------------
-    const trySquid = async () => {
-        const khinsiderAlbumUrl = KHINSIDER_ORIGIN + location.pathname;
-        console.log(`${TAG} Trying squid.wtf for: ${khinsiderAlbumUrl}`);
+    const tracks = Array.from(playlistTable.querySelectorAll('tr'))
+        .filter((row) => row.querySelector('a[href*="/game-soundtracks/album/"]') && !row.querySelector('th'))
+        .map((row) => {
+            const rowLinks = Array.from(row.querySelectorAll('a[href*="/game-soundtracks/album/"]'));
+            const link = rowLinks.find(isTitleLink) || rowLinks[0];
+            const durationCell = Array.from(row.querySelectorAll('td'))
+                .find((td) => /^\d+:\d+(:\d+)?$/.test(td.innerText.trim()));
+            return {
+                title: link.innerText.trim(),
+                pageUrl: link.href,
+                durationMs: durationCell ? toMs(durationCell.innerText) : 0
+            };
+        });
 
-        // Fetch album metadata via the squid.wtf proxy.
-        const albumResp = await fetch(SQUID_ORIGIN + '/api/album?url=' + encodeURIComponent(khinsiderAlbumUrl));
-        if (!albumResp.ok) throw new Error(`squid.wtf /api/album HTTP ${albumResp.status}`);
-        const album = await albumResp.json();
+    if (tracks.length === 0) {
+        console.error(`${TAG} ❌ No tracks found in the #songlist table.`);
+        return;
+    }
+    console.log(`${TAG} ${tracks.length} tracks. Reading the download links...`);
 
-        const tracks = album.tracks || [];
-        if (tracks.length === 0) throw new Error('No tracks returned by squid.wtf');
-
-        const albumTitle = album.name || document.querySelector('h2')?.innerText.trim() || 'Unknown Album';
-        const coverUrl = album.coverUrl || '';
-
-        console.log(`${TAG} squid.wtf found ${tracks.length} tracks. Fetching FLAC links...`);
-
-        const AUDIO_EXT = /\.(flac|mp3|ogg|wav)(\?|$)/i;
-
-        const getDirectLink = async (trackPageUrl) => {
-            try {
-                const resp = await fetch(SQUID_ORIGIN + '/api/download?url=' + encodeURIComponent(trackPageUrl));
-                if (!resp.ok) return null;
-                const html = await resp.text();
-                const doc = new DOMParser().parseFromString(html, 'text/html');
-                const links = [...doc.querySelectorAll('a[href]')]
-                    .map(a => a.href)
-                    .filter(h => AUDIO_EXT.test(h));
-                return links.find(h => /\.flac(\?|$)/i.test(h)) || links.find(h => /\.mp3(\?|$)/i.test(h)) || null;
-            } catch {
-                return null;
-            }
-        };
-
-        const xspfTrackEntries = [];
-        for (let i = 0; i < tracks.length; i++) {
-            const track = tracks[i];
-            const trackTitle = track.title || `Track ${track.number || i + 1}`;
-            console.log(`${TAG} [${i + 1}/${tracks.length}] ${trackTitle}`);
-
-            const audioUrl = await getDirectLink(track.url);
-            if (!audioUrl) {
-                console.warn(`${TAG} Could not get link for track ${i + 1}, skipping.`);
-                continue;
-            }
-
-            const ms = durationMs(track.duration);
-            const isFlac = /\.flac(\?|$)/i.test(audioUrl);
-            let xml = '    <track>\n';
-            xml += `      <location>${esc(audioUrl)}</location>\n`;
-            xml += `      <title>${esc(trackTitle)}</title>\n`;
-            xml += `      <album>${esc(albumTitle)}</album>\n`;
-            xml += `      <trackNum>${track.number || i + 1}</trackNum>\n`;
-            if (ms > 0) xml += `      <duration>${ms}</duration>\n`;
-            xml += `      <annotation>${isFlac ? 'FLAC' : 'MP3'}</annotation>\n`;
-            xml += '    </track>';
-            xspfTrackEntries.push(xml);
-        }
-
-        if (xspfTrackEntries.length === 0) throw new Error('No tracks successfully fetched from squid.wtf');
-
-        let xspf = '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n';
-        xspf += `  <title>${esc(albumTitle)}</title>\n`;
-        xspf += `  <location>${esc(location.href)}</location>\n`;
-        if (coverUrl) xspf += `  <image>${esc(coverUrl)}</image>\n`;
-        xspf += `  <trackList>\n${xspfTrackEntries.join('\n')}\n  </trackList>\n</playlist>`;
-
-        const filename = `${albumTitle} [KHInsider-Squid].xspf`.replace(/[\\/:*?"<>|]/g, '_');
-        downloadXspf(xspf, filename);
-        console.log(`${TAG} Done via squid.wtf: ${xspfTrackEntries.length}/${tracks.length} tracks to "${filename}".`);
-        return true;
-    };
-
-    // -------------------------------------------------------------------------
-    // Strategy 2: Classic KHInsider per-track extraction (MP3 fallback)
-    // -------------------------------------------------------------------------
-    const tryClassic = async () => {
-        console.log(`${TAG} Falling back to classic KHInsider extraction...`);
-
-        const playlistTable = document.getElementById('songlist');
-        if (!playlistTable) {
-            console.error(`${TAG} Table #songlist not found. Ensure you are on a KHInsider album page.`);
-            return false;
-        }
-
-        const albumTitle = document.querySelector('h2')?.innerText.trim() || 'Unknown Album';
-        const albumImageAnchor = document.querySelector('.albumImage a');
-        const albumImageUrl = albumImageAnchor ? albumImageAnchor.href : '';
-
-        const rows = Array.from(playlistTable.querySelectorAll('tr')).filter(row =>
-            row.querySelector('a[href*="/game-soundtracks/album/"]') && !row.querySelector('th')
-        );
-
-        if (rows.length === 0) {
-            console.error(`${TAG} No tracks found in the playlist table.`);
-            return false;
-        }
-
-        console.log(`${TAG} Found ${rows.length} tracks. Starting classic extraction...`);
-
-        const getDirectLink = async (pageUrl) => {
+    // --- 2. Best direct link on each track page ---
+    const getBestLink = async (pageUrl) => {
+        for (let attempt = 1; attempt <= 2; attempt++) {
             try {
                 const response = await fetch(pageUrl);
-                const html = await response.text();
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                return doc.querySelector('.songDownloadLink')?.closest('a')?.href || null;
-            } catch {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+                const links = Array.from(doc.querySelectorAll('a[href]'))
+                    .map((a) => {
+                        try { return new URL(a.getAttribute('href'), pageUrl).href; } catch (e) { return ''; }
+                    })
+                    .filter((href) => FORMATS.includes(formatOf(href)));
+                // Track pages also end in .mp3: prefer files on the CDN host.
+                const pageHost = new URL(pageUrl).host;
+                const files = links.filter((href) => new URL(href).host !== pageHost);
+                const pool = files.length > 0 ? files : links;
+                for (const format of FORMATS) {
+                    const hit = pool.find((href) => formatOf(href) === format);
+                    if (hit) return hit;
+                }
                 return null;
+            } catch (err) {
+                if (attempt === 2) console.warn(`${TAG} ⚠️ ${pageUrl}: ${err.message}`);
             }
-        };
-
-        const xspfTrackEntries = [];
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const trackLink = row.querySelector('a[href*="/game-soundtracks/album/"]');
-            if (!trackLink) continue;
-
-            const trackTitle = trackLink.innerText.trim();
-            const trackPageUrl = trackLink.href;
-            console.log(`${TAG} [${i + 1}/${rows.length}] Extracting: ${trackTitle}...`);
-
-            const directAudioUrl = await getDirectLink(trackPageUrl);
-            if (!directAudioUrl) {
-                console.warn(`${TAG} Failed to retrieve link for: ${trackTitle}`);
-                continue;
-            }
-
-            const cells = Array.from(row.querySelectorAll('td'));
-            const durationCell = cells.find(td => /^\d+:\d+(:\d+)?$/.test(td.innerText.trim()));
-            let ms = 0;
-            if (durationCell) {
-                const parts = durationCell.innerText.trim().split(':').map(Number);
-                ms = parts.length === 2
-                    ? (parts[0] * 60 + parts[1]) * 1000
-                    : (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
-            }
-
-            xspfTrackEntries.push(`    <track>
-      <location>${esc(directAudioUrl)}</location>
-      <title>${esc(trackTitle)}</title>
-      <album>${esc(albumTitle)}</album>
-      <trackNum>${i + 1}</trackNum>
-      ${ms > 0 ? `<duration>${ms}</duration>` : ''}
-    </track>`);
         }
-
-        let xspf = `<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n`;
-        xspf += `  <title>${esc(albumTitle)}</title>\n`;
-        if (albumImageUrl) xspf += `  <image>${esc(albumImageUrl)}</image>\n`;
-        xspf += `  <trackList>\n${xspfTrackEntries.join('\n')}\n  </trackList>\n</playlist>`;
-
-        const filename = `${albumTitle} [KHInsider].xspf`.replace(/[\\/:*?"<>|]/g, '_');
-        downloadXspf(xspf, filename);
-        console.log(`${TAG} Done via classic: ${xspfTrackEntries.length} tracks to "${filename}".`);
-        return true;
+        return null;
     };
 
-    // -------------------------------------------------------------------------
-    // Main
-    // -------------------------------------------------------------------------
-    console.log(`${TAG} Starting...`);
-    try {
-        await trySquid();
-    } catch (err) {
-        console.warn(`${TAG} squid.wtf strategy failed: ${err.message}`);
-        await tryClassic();
+    // Fetch a few track pages at a time, keeping the album order.
+    const links = new Array(tracks.length);
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+        while (next < tracks.length) {
+            const i = next++;
+            links[i] = await getBestLink(tracks[i].pageUrl);
+            done++;
+            const label = links[i] ? formatOf(links[i]).toUpperCase() : 'no link';
+            console.log(`${TAG} [${done}/${tracks.length}] ${tracks[i].title}: ${label}`);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tracks.length) }, worker));
+
+    // --- 3. Build the XSPF ---
+    const counts = {};
+    const trackXml = [];
+    tracks.forEach((track, i) => {
+        if (!links[i]) {
+            console.warn(`${TAG} ⚠️ Skipped (no download link): ${track.title}`);
+            return;
+        }
+        const format = formatOf(links[i]).toUpperCase();
+        counts[format] = (counts[format] || 0) + 1;
+        let xml = '    <track>\n';
+        xml += `      <location>${esc(links[i])}</location>\n`;
+        xml += `      <title>${esc(track.title)}</title>\n`;
+        xml += `      <album>${esc(albumTitle)}</album>\n`;
+        xml += `      <trackNum>${i + 1}</trackNum>\n`;
+        if (track.durationMs > 0) xml += `      <duration>${track.durationMs}</duration>\n`;
+        xml += '    </track>';
+        trackXml.push(xml);
+    });
+
+    if (trackXml.length === 0) {
+        console.error(`${TAG} ❌ No download links found on the track pages.`);
+        return;
     }
+
+    let xspf = '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n';
+    xspf += `  <title>${esc(albumTitle)}</title>\n`;
+    xspf += `  <location>${esc(location.href)}</location>\n`;
+    if (albumImageUrl) xspf += `  <image>${esc(albumImageUrl)}</image>\n`;
+    xspf += `  <trackList>\n${trackXml.join('\n')}\n  </trackList>\n</playlist>`;
+
+    // --- 4. Download ---
+    const filename = `${albumTitle} [KHInsider].xspf`.replace(/[\\/:*?"<>|]/g, '_');
+    const blob = new Blob([xspf], { type: 'application/xspf+xml' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+    const summary = Object.keys(counts).map((f) => `${counts[f]} ${f}`).join(', ');
+    console.log(`${TAG} ✅ ${trackXml.length}/${tracks.length} tracks (${summary}) exported to "${filename}".`);
 })();

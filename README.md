@@ -9,7 +9,7 @@ Use them with one bookmarklet that recognises the site you are on, or paste them
 | Site | What you get | Script |
 |------|--------------|--------|
 | [Musify.club](https://musify.club/en) | Big catalogue, high quality music (320 kbps MP3) | `musify_album_to_xspf.js` |
-| [KHInsider](https://downloads.khinsider.com/) | Video game music, gamerips and more. Tries to fetch FLAC from khinsider.squid.wtf first; falls back to KHInsider MP3 links if the album is not there. | `khinsider_album_to_xspf.js` |
+| [KHInsider](https://downloads.khinsider.com/) | Video game music, gamerips and more. FLAC when the album has it, MP3 otherwise. | `khinsider_album_to_xspf.js` |
 | [KHInsider-Squid](https://khinsider.squid.wtf/) | KHInsider mirror with higher quality files (typically FLAC) | `khinsider_squid_to_xspf.js` |
 | [Squidify.org](https://www.squidify.org/) | Music of modern video games in HD (FLAC) | `squidify_abum_to_xspf.js` |
 | [YouTube](https://youtube.com/) | Albums and playlists, read directly from YouTube | `youtube_album_to_playlist.js` |
