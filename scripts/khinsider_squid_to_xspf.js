@@ -1,5 +1,5 @@
 /**
- * KHInsider-Squid XSPF Playlist Generator - v1.1.0
+ * KHInsider-Squid XSPF Playlist Generator - v1.1.1
  *
  * Run in the DevTools console on an album page of khinsider.squid.wtf
  * (https://khinsider.squid.wtf/game-soundtracks/album/...).
@@ -16,6 +16,9 @@
  * page and picks the FLAC link when available (falling back to MP3).
  *
  * Changelog:
+ *   1.1.1 (2026-10-23) - Progress panel: errors close by themselves after
+ *                        20 s (successes after 8 s); the countdown pauses
+ *                        while the mouse is over the panel.
  *   1.1.0 (2026-10-23) - Progress panel in the page. Track pages are read 3 at
  *                        a time with one retry, and the best format is chosen
  *                        like in khinsider_album_to_xspf.js.
@@ -58,6 +61,16 @@
         const bar = add(box, { display: 'none', height: '4px', margin: '8px 0 4px', borderRadius: '2px', background: '#3a3a3c', overflow: 'hidden' });
         const fill = add(bar, { width: '0%', height: '100%', background: '#ff7a33', transition: 'width .2s' });
         const detail = add(box, { color: '#a1a1a6', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
+        // Close after a delay; the countdown pauses while the mouse is over the panel.
+        let timer = null;
+        let delay = 0;
+        const closeLater = (ms) => {
+            delay = ms;
+            clearTimeout(timer);
+            timer = setTimeout(() => host.remove(), ms);
+        };
+        box.addEventListener('mouseenter', () => clearTimeout(timer));
+        box.addEventListener('mouseleave', () => { if (delay) closeLater(delay); });
         (document.body || document.documentElement).appendChild(host);
         return {
             // Main line: what the script is doing now.
@@ -83,15 +96,16 @@
                 fill.style.width = '100%';
                 detail.textContent = note || '';
                 console.log(`${tag} ✅ ${text}${note ? ` ${note}` : ''}`);
-                setTimeout(() => host.remove(), 8000);
+                closeLater(8000);
             },
-            // Failure: red line, stays until closed.
+            // Failure: red line, closes itself after 20 seconds.
             fail(text) {
                 line.textContent = `✕ ${text}`;
                 line.style.color = '#ff453a';
                 bar.style.display = 'none';
                 detail.textContent = 'Details in the console (F12).';
                 console.error(`${tag} ❌ ${text}`);
+                closeLater(20000);
             }
         };
     };
