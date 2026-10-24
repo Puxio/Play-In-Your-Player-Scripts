@@ -1,5 +1,5 @@
 /**
- * YouTube Playlist / Album to XSPF - v3.1.1
+ * YouTube Playlist / Album to XSPF - v3.2.0
  *
  * Run in the DevTools console (or with the bookmarklet) on a YouTube
  * playlist or album: https://www.youtube.com/playlist?list=... or a watch
@@ -17,6 +17,10 @@
  * "Artist - Album [Youtube].xspf", other playlists as "Title [Youtube].xspf".
  *
  * Changelog:
+ *   3.2.0 (2026-10-24) - Every track carries its video thumbnail (<image>,
+ *                        i.ytimg.com/vi/<id>/hqdefault.jpg), so players such
+ *                        as VLC show it while the track plays; the playlist
+ *                        image is the first video's thumbnail.
  *   3.1.1 (2026-10-23) - Progress panel: errors close by themselves after
  *                        20 s (successes after 8 s); the countdown pauses
  *                        while the mouse is over the panel.
@@ -312,6 +316,9 @@
         const stripTopic = (name) => (name || '').replace(/\s*-\s*Topic$/, '').trim();
         const albumArtist = isAlbum ? (headerArtist || stripTopic(videos[0].author) || 'Unknown Artist') : '';
 
+        // Video thumbnail, derived from the id: hqdefault exists for every video.
+        const thumbnail = (videoId) => `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
         const trackXml = videos.map((video) => {
             let title = video.title || 'Unknown Title';
             let artist = video.author || 'Unknown Artist';
@@ -338,6 +345,7 @@
             xml += `      <title>${esc(title)}</title>\n`;
             xml += `      <creator>${esc(artist)}</creator>\n`;
             xml += `      <location>${esc('https://www.youtube.com/watch?v=' + video.videoId)}</location>\n`;
+            xml += `      <image>${esc(thumbnail(video.videoId))}</image>\n`;
             if (video.seconds) xml += `      <duration>${video.seconds * 1000}</duration>\n`;
             xml += '    </track>';
             return xml;
@@ -356,6 +364,7 @@
         let xspf = '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n';
         xspf += `  <title>${esc(name)}</title>\n`;
         if (isAlbum) xspf += `  <creator>${esc(albumArtist)}</creator>\n`;
+        xspf += `  <image>${esc(thumbnail(videos[0].videoId))}</image>\n`;
         xspf += `  <trackList>\n${trackXml.join('\n')}\n  </trackList>\n</playlist>`;
 
         // --- Download ---
