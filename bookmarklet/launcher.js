@@ -40,6 +40,9 @@
  * same on every push to publish the page).
  *
  * Changelog:
+ *   1.2.1 (2026-10-24) - FALLBACK map: music.youtube.com runs
+ *                        youtube_music_to_xspf.js (listed before youtube.com,
+ *                        which would otherwise match it as a subdomain).
  *   1.2.0 (2026-10-23) - VERSION constant and update notice. Installed from
  *                        the GitHub Pages install page by drag and drop.
  *   1.1.4 (2026-10-22) - FALLBACK map: squid.wtf runs khinsider_squid_to_xspf.js.
@@ -52,7 +55,7 @@
  *   1.0.0 (2026-10-16) - Initial release.
  */
 (function () {
-    var VERSION = '1.2.0';
+    var VERSION = '1.2.1';
     var REPO = 'Puxio/Play-In-Your-Player-Scripts';
     var BASE = 'https://raw.githubusercontent.com/' + REPO + '/main/';
     var CDN = 'https://cdn.jsdelivr.net/gh/' + REPO + '@main/scripts/';
@@ -62,6 +65,7 @@
         'khinsider.com': 'khinsider_album_to_xspf.js',
         'squid.wtf': 'khinsider_squid_to_xspf.js',
         'squidify.org': 'squidify_abum_to_xspf.js',
+        'music.youtube.com': 'youtube_music_to_xspf.js',
         'youtube.com': 'youtube_album_to_playlist.js'
     };
     var TAG = 'Play-In-Your-Player: ';

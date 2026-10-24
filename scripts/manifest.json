@@ -3,5 +3,6 @@
   "khinsider.com": "khinsider_album_to_xspf.js",
   "squid.wtf": "khinsider_squid_to_xspf.js",
   "squidify.org": "squidify_abum_to_xspf.js",
+  "music.youtube.com": "youtube_music_to_xspf.js",
   "youtube.com": "youtube_album_to_playlist.js"
 }

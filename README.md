@@ -1,6 +1,6 @@
 # Export playlist in .xspf and play them in your player
 
-Scripts that export Musify.club, KHInsider, Squidify, KHInsider-Squid and YouTube albums or playlists to .xspf playlists, so you can stream them in your favourite player (VLC, foobar2000, AIMP, PotPlayer, MPV...).
+Scripts that export Musify.club, KHInsider, Squidify, KHInsider-Squid, YouTube and YouTube Music albums or playlists to .xspf playlists, so you can stream them in your favourite player (VLC, foobar2000, AIMP, PotPlayer, MPV...).
 
 Use them with one bookmarklet that recognises the site you are on, or paste them into the browser DevTools console.
 
@@ -13,6 +13,7 @@ Use them with one bookmarklet that recognises the site you are on, or paste them
 | [KHInsider-Squid](https://khinsider.squid.wtf/) | KHInsider mirror with higher quality files (typically FLAC) | `khinsider_squid_to_xspf.js` |
 | [Squidify.org](https://www.squidify.org/) | Music of modern video games in HD (FLAC) | `squidify_abum_to_xspf.js` |
 | [YouTube](https://youtube.com/) | Albums and playlists, read directly from YouTube | `youtube_album_to_playlist.js` |
+| [YouTube Music](https://music.youtube.com/) | Albums and playlists, read directly from YouTube Music, with square cover art | `youtube_music_to_xspf.js` |
 
 ## Quick start: the 'Play In My Player' bookmarklet
 
@@ -36,6 +37,8 @@ Open an album or playlist page on a supported site and click the bookmark. The .
 
 On YouTube, open the playlist or album page (or a video played from a playlist, with `&list=` in the URL) and click the bookmark. If YouTube blocks the injected script, the bookmarklet copies it to the clipboard instead: paste it into the console. The first time, Chrome asks you to type `allow pasting` before it accepts pasted code.
 
+On YouTube Music it works the same way, directly on music.youtube.com: open an album (`/browse/MPREb_...`), a playlist (`/playlist?list=...`) or a song played from one, and click the bookmark.
+
 ### How it works
 
 The bookmarklet reads the hostname of the current page, looks it up in [`scripts/manifest.json`](scripts/manifest.json), downloads the matching script from this repository and runs it in the page, exactly as if you had pasted it into the console. Subdomains match their parent domain and `www.` is ignored.
@@ -57,6 +60,7 @@ Go to a supported music website and navigate to an album or playlist page. Open 
 
 - **Musify links expire.** Musify signs its stream URLs, and the signature only lasts a few hours. Play the .xspf soon after creating it, and create it again (one click on the bookmark) when it stops working.
 - **YouTube** playlists are read directly from youtube.com. You need a YouTube capable player to play them (for example AIMP with the YouTube plugin, or PotPlayer).
+- **YouTube Music** albums and playlists are read directly from music.youtube.com, without going through youtube.com; the tracks are youtube.com/watch links, so the same YouTube capable player is needed. Radios and mixes are generated on the fly and cannot be exported.
 
 ## Adding a new site
 
