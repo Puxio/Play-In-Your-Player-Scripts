@@ -1,6 +1,6 @@
 # Export playlist in .xspf and play them in your player
 
-Scripts that export Musify.club, KHInsider, Squidify, KHInsider-Squid, YouTube and YouTube Music albums or playlists to .xspf playlists, so you can stream them in your favourite player (VLC, foobar2000, AIMP, PotPlayer, MPV...).
+Scripts that export Musify.club, KHInsider, Squidify, KHInsider-Squid, YouTube and YouTube Music albums or playlists to .xspf playlists, so you can stream them in a player that reads XSPF (VLC, AIMP, PotPlayer, foobar2000 with the foo_xspf component...). mpv does not read XSPF.
 
 Use them with one bookmarklet that recognises the site you are on, or paste them into the browser DevTools console.
 
