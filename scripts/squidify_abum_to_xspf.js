@@ -1,5 +1,5 @@
 /**
- * Squidify XSPF Playlist Generator - v3.3.1
+ * Squidify XSPF Playlist Generator - v3.4.0
  *
  * Run in the DevTools console on an album or playlist page of:
  *   - www.squidify.org
@@ -7,13 +7,21 @@
  * Squidify loads cover art from /rest/getCoverArt with guest Subsonic
  * credentials (u, t, s, v, c). The script reuses those parameters to call
  * the Subsonic API for the track list and writes /rest/stream URLs for each
- * track (typically FLAC). Subsonic token authentication does not expire on
- * its own, so the XSPF keeps working until the site changes its credentials.
+ * track (typically FLAC). The guest account has a fixed password and each
+ * token is md5(password + random salt), so tokens do not expire: the XSPF
+ * keeps working until the site changes the guest password.
+ *
+ * Inside the XSPF every & of these URLs is written &amp; (XML escaping);
+ * players decode it. A URL copied from the file into a browser needs the
+ * &amp; turned back into &.
  *
  * Note: khinsider.squid.wtf is a different site (Next.js, not Subsonic).
  * Use khinsider_squid_to_xspf.js for that site instead.
  *
  * Changelog:
+ *   3.4.0 (2026-10-24) - Every track carries its own cover (<image>, from its
+ *                        coverArt id), so players that show per-track art
+ *                        (VLC) display it, also in playlists of mixed albums.
  *   3.3.1 (2026-10-23) - Progress panel: errors close by themselves after
  *                        20 s (successes after 8 s); the countdown pauses
  *                        while the mouse is over the panel.
@@ -249,6 +257,14 @@
             query.set('id', songId);
             return `${origin}/rest/stream?${query}`;
         };
+        // Cover shown while a track plays: its own coverArt, else the page cover.
+        const trackCover = (song) => {
+            if (!song.coverArt) return coverImg.src;
+            const query = new URLSearchParams(auth);
+            query.set('id', song.coverArt);
+            query.set('size', '500');
+            return `${origin}/rest/getCoverArt?${query}`;
+        };
 
         const trackXml = songs.map((song, index) => {
             let xml = '    <track>\n';
@@ -258,6 +274,7 @@
             xml += `      <album>${esc(song.album || title)}</album>\n`;
             xml += `      <trackNum>${esc(isPlaylist ? index + 1 : (song.track || index + 1))}</trackNum>\n`;
             if (song.duration) xml += `      <duration>${Math.round(song.duration * 1000)}</duration>\n`;
+            xml += `      <image>${esc(trackCover(song))}</image>\n`;
             xml += '    </track>';
             return xml;
         });

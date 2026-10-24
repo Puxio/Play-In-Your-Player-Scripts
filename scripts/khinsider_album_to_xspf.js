@@ -1,5 +1,5 @@
 /**
- * KHInsider XSPF Playlist Generator - v5.1.1
+ * KHInsider XSPF Playlist Generator - v5.2.0
  *
  * Run in the DevTools console on a KHInsider album page
  * (downloads.khinsider.com/game-soundtracks/album/...).
@@ -14,6 +14,8 @@
  * browser blocks cross-origin calls), and it is not needed here.
  *
  * Changelog:
+ *   5.2.0 (2026-10-24) - Every track carries the album cover (<image>), so
+ *                        players that show per-track art (VLC) display it.
  *   5.1.1 (2026-10-23) - Progress panel: errors close by themselves after
  *                        20 s (successes after 8 s); the countdown pauses
  *                        while the mouse is over the panel.
@@ -250,6 +252,7 @@
             xml += `      <album>${esc(albumTitle)}</album>\n`;
             xml += `      <trackNum>${i + 1}</trackNum>\n`;
             if (track.durationMs > 0) xml += `      <duration>${track.durationMs}</duration>\n`;
+            if (albumImageUrl) xml += `      <image>${esc(albumImageUrl)}</image>\n`;
             xml += '    </track>';
             trackXml.push(xml);
         });

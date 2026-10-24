@@ -1,5 +1,5 @@
 /**
- * KHInsider-Squid XSPF Playlist Generator - v1.1.1
+ * KHInsider-Squid XSPF Playlist Generator - v1.2.0
  *
  * Run in the DevTools console on an album page of khinsider.squid.wtf
  * (https://khinsider.squid.wtf/game-soundtracks/album/...).
@@ -16,6 +16,8 @@
  * page and picks the FLAC link when available (falling back to MP3).
  *
  * Changelog:
+ *   1.2.0 (2026-10-24) - Every track carries the album cover (<image>), so
+ *                        players that show per-track art (VLC) display it.
  *   1.1.1 (2026-10-23) - Progress panel: errors close by themselves after
  *                        20 s (successes after 8 s); the countdown pauses
  *                        while the mouse is over the panel.
@@ -235,6 +237,7 @@
             xml += `      <trackNum>${track.number || i + 1}</trackNum>\n`;
             if (ms > 0) xml += `      <duration>${ms}</duration>\n`;
             xml += `      <annotation>${format}</annotation>\n`;
+            if (coverUrl) xml += `      <image>${esc(coverUrl)}</image>\n`;
             xml += '    </track>';
             trackXml.push(xml);
         });

@@ -1,5 +1,5 @@
 /**
- * XSPF Playlist Generator for Musify.club - v1.2.1
+ * XSPF Playlist Generator for Musify.club - v1.3.0
  *
  * This script is designed to run in the DevTools console of an Album/Playlist
  * page on musify.club. It extracts track details, fetches the real MP3 URL
@@ -16,6 +16,9 @@
  *    so the resulting XSPF is time-limited (the signature lasts a few hours).
  *
  * Changelog:
+ *   1.3.0 (2026-10-24) - Every track carries its cover (<image>): the one
+ *                        returned by the stream-url API, else the album
+ *                        cover. Players that show per-track art (VLC) display it.
  *   1.2.1 (2026-10-23) - Progress panel: errors close by themselves after
  *                        20 s (successes after 8 s); the countdown pauses
  *                        while the mouse is over the panel.
@@ -282,7 +285,8 @@
         // --- End Album Info Extraction ---
 
 
-        // --- Helper: fetch the real MP3 URL for a given track id ---
+        // --- Helper: fetch the real MP3 URL (and cover) for a given track id ---
+        // Returns { url, cover } or null; cover is '' when the API has none.
         const fetchStreamUrl = async (trackId) => {
             try {
                 const response = await fetch(STREAM_URL_ENDPOINT(trackId), {
@@ -295,7 +299,15 @@
                     return null;
                 }
                 const data = await response.json();
-                return data && data.url ? data.url : null;
+                if (!data || !data.url) return null;
+                let cover = '';
+                try {
+                    if (typeof data.cover === 'string' && data.cover) {
+                        const coverUrl = new URL(data.cover, location.href);
+                        if (/^https?:$/.test(coverUrl.protocol)) cover = coverUrl.href;
+                    }
+                } catch (e) { /* no usable cover */ }
+                return { url: data.url, cover };
             } catch (err) {
                 console.warn(`[track ${trackId}] stream-url fetch error:`, err);
                 return null;
@@ -341,7 +353,10 @@
             // IMPORTANT: keep the full URL including the ?expires=...&sig=... query
             // string. Those parameters authenticate the request on the Musify CDN;
             // without them the server returns HTTP 404 and the file will not play.
-            const url = await fetchStreamUrl(trackId);
+            const stream = await fetchStreamUrl(trackId);
+            const url = stream && stream.url;
+            // Cover shown while the track plays: the track's own, else the album's.
+            const trackCover = (stream && stream.cover) || (isAlbumPage && albumImageUrl) || '';
             if (!url) {
                 ui.warn(`[Item Index ${index + 1}] Skip: could not resolve stream URL for track ${trackId}.`);
                 return null;
@@ -396,6 +411,7 @@
             if (trackTitle !== 'Unknown Track') { trackXml += `      <title>${escapeXml(trackTitle)}</title>\n`; }
             if (albumTitle !== 'Unknown Album') { trackXml += `      <album>${escapeXml(albumTitle)}</album>\n`; }
             if (trackNumber !== null) { trackXml += `      <trackNum>${escapeXml(trackNumber)}</trackNum>\n`; }
+            if (trackCover) { trackXml += `      <image>${escapeXml(trackCover)}</image>\n`; }
             trackXml += '    </track>';
 
             return trackXml;
